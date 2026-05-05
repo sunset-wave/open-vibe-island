@@ -1185,10 +1185,6 @@ private struct SessionListLivePreviewRow: View {
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(V6Palette.paper.opacity(0.82))
             case .running:
-                Text("Currently running")
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                    .tracking(0.8)
-                    .foregroundStyle(V6Palette.paper.opacity(0.4))
                 Text(item.detail)
                     .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                     .foregroundStyle(V6Palette.paper.opacity(0.78))

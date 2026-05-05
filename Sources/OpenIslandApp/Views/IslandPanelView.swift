@@ -1482,12 +1482,7 @@ private struct IslandSessionRow: View {
     }
 
     private var runningDetailBody: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(lang.t("settings.appearance.state.running"))
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.42))
-                .textCase(.uppercase)
-
+        VStack(alignment: .leading, spacing: 0) {
             if let runningDetailText {
                 Text(runningDetailText)
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
