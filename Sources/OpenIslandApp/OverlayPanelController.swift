@@ -17,6 +17,8 @@ final class OverlayPanelController {
     // Content padding top + scroll padding + v8 list header/footer + bottom inset.
     // Rows are now full-width scan rows, so the old inter-card spacing is gone.
     private static let openedContentVerticalInsets: CGFloat = 84
+    private static let notificationMeasuredContentPadding: CGFloat = 8
+    private static let notificationEstimatedVerticalInsets: CGFloat = 36
     private static let openedEmptyStateHeight: CGFloat = 108
     private static let questionCardBaseHeight: CGFloat = 110
     private static let questionCardMaxHeight: CGFloat = 420
@@ -514,7 +516,7 @@ final class OverlayPanelController {
         if isNotificationMode {
             // Use SwiftUI-measured height when available (accurate after first render).
             if model.measuredNotificationContentHeight > 0 {
-                return model.measuredNotificationContentHeight + 28
+                return model.measuredNotificationContentHeight + Self.notificationMeasuredContentPadding
             }
             // First render: estimate from the actionable session's content so the
             // initial window is close to the final size. This avoids a large blank
@@ -524,7 +526,7 @@ final class OverlayPanelController {
                let session = model.state.session(id: actionableID) {
                 let rowHeight = session.estimatedIslandRowHeight(at: now)
                 let bodyHeight = actionableBodyHeight(for: session, model: model)
-                return rowHeight + bodyHeight + Self.openedContentVerticalInsets
+                return rowHeight + bodyHeight + Self.notificationEstimatedVerticalInsets
             }
             return 300
         }

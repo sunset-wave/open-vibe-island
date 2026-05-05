@@ -536,6 +536,7 @@ struct IslandPanelView: View {
                     isActionable: true,
                     useDrawingGroup: model.notchStatus == .opened,
                     isInteractive: model.notchStatus == .opened,
+                    presentation: .notification,
                     sideInset: sessionListSideInset,
                     lang: model.lang,
                     onApprove: { model.approvePermission(for: session.id, action: $0) },
@@ -551,10 +552,12 @@ struct IslandPanelView: View {
                         model.expandNotificationToSessionList(clearExpansion: isCompletion)
                     } label: {
                         Text(model.lang.t("island.showAll", model.allSessions.count))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.45))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.36))
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.horizontal, sessionListSideInset)
+                            .padding(.top, 6)
+                            .padding(.bottom, 2)
                     }
                     .buttonStyle(.plain)
                 }
@@ -1150,6 +1153,11 @@ private struct OpenedHeaderMetrics {
 
 // MARK: - Session row (opened state)
 
+private enum IslandSessionRowPresentation {
+    case list
+    case notification
+}
+
 private struct IslandSessionRow: View {
     let session: AgentSession
     let referenceDate: Date
@@ -1158,6 +1166,7 @@ private struct IslandSessionRow: View {
     var isActionable: Bool = false
     var useDrawingGroup: Bool = true
     var isInteractive: Bool = true
+    var presentation: IslandSessionRowPresentation = .list
     var sideInset: CGFloat = 16
     var lang: LanguageManager = .shared
     var onApprove: ((ApprovalAction) -> Void)?
@@ -1206,7 +1215,7 @@ private struct IslandSessionRow: View {
                 .frame(height: 1)
         }
         .overlay(alignment: .leading) {
-            if stateIndicator == .bar {
+            if showsLeadingStatusBar {
                 RoundedRectangle(cornerRadius: 999, style: .continuous)
                     .fill(statusTint(for: presence))
                     .frame(width: 3)
@@ -1232,7 +1241,7 @@ private struct IslandSessionRow: View {
 
     private func rowSummary(presence: IslandSessionPresence, showsDetail: Bool) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            if stateIndicator != .tint && stateIndicator != .bar {
+            if showsLeadingStatusIndicator {
                 statusIndicator(for: presence)
                     .frame(width: 20, alignment: .top)
             }
@@ -1402,7 +1411,11 @@ private struct IslandSessionRow: View {
     }
 
     private var rowLeadingInset: CGFloat {
-        switch stateIndicator {
+        if presentation == .notification {
+            return sideInset
+        }
+
+        return switch stateIndicator {
         case .bar:
             max(28, sideInset)
         case .tint:
@@ -1413,7 +1426,11 @@ private struct IslandSessionRow: View {
     }
 
     private var detailLeadingInset: CGFloat {
-        switch stateIndicator {
+        if presentation == .notification {
+            return sideInset
+        }
+
+        return switch stateIndicator {
         case .bar:
             max(28, sideInset)
         case .tint:
@@ -1421,6 +1438,14 @@ private struct IslandSessionRow: View {
         case .animatedDot, .glyph:
             sideInset + 30
         }
+    }
+
+    private var showsLeadingStatusIndicator: Bool {
+        presentation == .list && stateIndicator != .tint && stateIndicator != .bar
+    }
+
+    private var showsLeadingStatusBar: Bool {
+        presentation == .list && stateIndicator == .bar
     }
 
     private func titleColor(for presence: IslandSessionPresence) -> Color {
@@ -1772,6 +1797,10 @@ private struct IslandSessionRow: View {
     }
 
     private func rowFillColor(for presence: IslandSessionPresence) -> Color {
+        if presentation == .notification {
+            return isHighlighted ? Color.white.opacity(0.03) : Color.clear
+        }
+
         let base = isHighlighted ? Color.white.opacity(isActionable ? 0.06 : 0.04) : Color.clear
         guard stateIndicator == .tint else { return base }
 
