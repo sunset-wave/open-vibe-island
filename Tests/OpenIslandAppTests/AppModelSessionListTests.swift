@@ -703,6 +703,44 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func completionNotificationDefersTimedCollapseWhilePointerIsInside() {
+        let model = AppModel()
+        model.applyTrackedEvent(
+            .sessionStarted(SessionStarted(
+                sessionID: "session-1",
+                title: "Test",
+                tool: .codex,
+                summary: "Done",
+                timestamp: .now
+            )),
+            updateLastActionMessage: false
+        )
+        model.applyTrackedEvent(
+            .sessionCompleted(SessionCompleted(
+                sessionID: "session-1",
+                summary: "Done",
+                timestamp: .now
+            )),
+            updateLastActionMessage: false
+        )
+        model.notchStatus = .opened
+        model.notchOpenReason = .notification
+        model.islandSurface = .sessionList(actionableSessionID: "session-1")
+
+        #expect(model.shouldAutoCollapseOnMouseLeave)
+        #expect(!model.shouldDeferTimedNotificationAutoCollapse)
+
+        model.notePointerInsideIslandSurface()
+
+        #expect(model.shouldDeferTimedNotificationAutoCollapse)
+
+        model.handlePointerExitedIslandSurface()
+
+        #expect(model.notchStatus == .closed)
+        #expect(model.notchOpenReason == nil)
+    }
+
+    @Test
     func mergeDiscoveredClaudeSessionsPreservesRegistryJumpTargetAndAddsTranscriptMetadata() {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel()

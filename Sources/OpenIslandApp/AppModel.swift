@@ -1202,6 +1202,7 @@ final class AppModel {
     var shouldAutoCollapseOnMouseLeave: Bool { overlay.shouldAutoCollapseOnMouseLeave }
     var autoCollapseOnMouseLeaveRequiresPriorSurfaceEntry: Bool { overlay.autoCollapseOnMouseLeaveRequiresPriorSurfaceEntry }
     var showsNotificationCard: Bool { overlay.showsNotificationCard }
+    var shouldDeferTimedNotificationAutoCollapse: Bool { overlay.shouldDeferTimedNotificationAutoCollapse }
 
     func loadDebugSnapshot(
         _ snapshot: IslandDebugSnapshot,

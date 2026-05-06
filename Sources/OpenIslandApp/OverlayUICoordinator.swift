@@ -57,6 +57,9 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     private var autoCollapseSurfaceHasBeenEntered = false
 
+    @ObservationIgnored
+    private var isPointerInsideIslandSurface = false
+
     /// Kept for API compatibility; always false now that the window never
     /// resizes and close transitions are pure SwiftUI.
     var isCloseTransitionPending: Bool { false }
@@ -107,6 +110,7 @@ final class OverlayUICoordinator {
             afterStateChange: { [weak self] in
                 guard let self else { return }
                 self.autoCollapseSurfaceHasBeenEntered = false
+                self.isPointerInsideIslandSurface = false
                 self.updateNotificationAutoCollapse()
             },
             onPlacementResolved: { [weak self] in
@@ -128,6 +132,7 @@ final class OverlayUICoordinator {
             },
             afterStateChange: { [weak self] in
                 self?.autoCollapseSurfaceHasBeenEntered = false
+                self?.isPointerInsideIslandSurface = false
                 self?.appModel?.measuredNotificationContentHeight = 0
             }
         )
@@ -279,6 +284,7 @@ final class OverlayUICoordinator {
             return
         }
 
+        isPointerInsideIslandSurface = true
         autoCollapseSurfaceHasBeenEntered = true
     }
 
@@ -286,6 +292,8 @@ final class OverlayUICoordinator {
         guard shouldAutoCollapseOnMouseLeave else {
             return
         }
+
+        isPointerInsideIslandSurface = false
 
         guard !autoCollapseOnMouseLeaveRequiresPriorSurfaceEntry
                 || autoCollapseSurfaceHasBeenEntered else {
@@ -367,8 +375,17 @@ final class OverlayUICoordinator {
                 return
             }
 
+            guard !self.shouldDeferTimedNotificationAutoCollapse else {
+                return
+            }
+
             self.notchClose()
         }
+    }
+
+    var shouldDeferTimedNotificationAutoCollapse: Bool {
+        isPointerInsideIslandSurface
+            || overlayPanelController.isPointInExpandedArea(NSEvent.mouseLocation)
     }
 
     // MARK: - Debug snapshots (overlay portion)
@@ -377,6 +394,7 @@ final class OverlayUICoordinator {
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
         autoCollapseSurfaceHasBeenEntered = false
+        isPointerInsideIslandSurface = false
 
         islandSurface = snapshot.islandSurface
         notchStatus = snapshot.notchStatus
