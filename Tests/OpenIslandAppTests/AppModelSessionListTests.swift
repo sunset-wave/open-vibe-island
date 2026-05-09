@@ -24,6 +24,9 @@ struct AppModelSessionListTests {
             "appearance.island.v8.topBar.sessionGroup",
             "appearance.island.v8.topBar.sessionSort",
             "appearance.island.v8.topBar.completedStaleThreshold",
+            "app.suppressFrontmostNotifications",
+            "feature.completionReply.enabled",
+            "overlay.sound.muted",
         ].forEach(UserDefaults.standard.removeObject(forKey:))
     }
 
@@ -992,6 +995,114 @@ struct AppModelSessionListTests {
             model.measuredNotificationContentHeight == 0,
             "Switching to a different session's card must clear the stale measurement from the previous session to prevent wrong initial panel sizing."
         )
+    }
+
+    @Test
+    @MainActor
+    func notificationMeasuredHeightClearedWhenSameSessionCardContentChanges() {
+        let model = AppModel()
+        model.isSoundMuted = true
+
+        var session = AgentSession(
+            id: "same-session",
+            title: "Codex · proj",
+            tool: .codex,
+            attachmentState: .attached,
+            phase: .waitingForApproval,
+            summary: "Approve edit",
+            updatedAt: .now,
+            permissionRequest: PermissionRequest(
+                title: "Edit",
+                summary: "A longer approval card",
+                affectedPath: "/tmp/long-file-name.swift"
+            )
+        )
+        session.isProcessAlive = true
+        session.phase = .completed
+        session.permissionRequest = nil
+        session.summary = "Done"
+        model.state = SessionState(sessions: [session])
+
+        let surface = IslandSurface.sessionList(actionableSessionID: "same-session")
+        model.notchStatus = .opened
+        model.notchOpenReason = .notification
+        model.islandSurface = surface
+        model.measuredNotificationContentHeight = 360
+
+        model.overlay.presentNotificationSurface(surface)
+
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        #expect(model.islandSurface == surface)
+        #expect(model.activeIslandCardSession?.phase == .completed)
+        #expect(
+            model.measuredNotificationContentHeight == 0,
+            "Replacing a notification with different content for the same session must discard the previous card's measured height."
+        )
+    }
+
+    @Test
+    @MainActor
+    func hoveredNotificationCardIsNotReplacedByAnotherNotification() {
+        let model = AppModel()
+        model.isSoundMuted = true
+
+        var currentSession = AgentSession(
+            id: "current-session",
+            title: "Claude · current",
+            tool: .claudeCode,
+            attachmentState: .attached,
+            phase: .waitingForApproval,
+            summary: "Approve current edit",
+            updatedAt: .now,
+            permissionRequest: PermissionRequest(
+                title: "Edit",
+                summary: "current.swift",
+                affectedPath: "/tmp/current.swift"
+            )
+        )
+        currentSession.isProcessAlive = true
+
+        var incomingSession = AgentSession(
+            id: "incoming-session",
+            title: "Codex · incoming",
+            tool: .codex,
+            attachmentState: .attached,
+            phase: .running,
+            summary: "Working",
+            updatedAt: .now
+        )
+        incomingSession.isProcessAlive = true
+
+        let currentSurface = IslandSurface.sessionList(actionableSessionID: "current-session")
+        model.state = SessionState(sessions: [currentSession, incomingSession])
+        model.notchStatus = .opened
+        model.notchOpenReason = .notification
+        model.islandSurface = currentSurface
+        model.measuredNotificationContentHeight = 280
+
+        model.notePointerInsideIslandSurface()
+
+        model.applyTrackedEvent(
+            .permissionRequested(PermissionRequested(
+                sessionID: "incoming-session",
+                request: PermissionRequest(
+                    title: "Edit",
+                    summary: "incoming.swift",
+                    affectedPath: "/tmp/incoming.swift"
+                ),
+                timestamp: .now
+            )),
+            updateLastActionMessage: false,
+            ingress: .bridge
+        )
+
+        #expect(model.state.session(id: "incoming-session")?.phase == .waitingForApproval)
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        #expect(model.islandSurface == currentSurface)
+        #expect(model.activeIslandCardSession?.id == "current-session")
+        #expect(model.measuredNotificationContentHeight == 280)
     }
 
     @Test

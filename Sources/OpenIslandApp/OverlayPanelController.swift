@@ -249,7 +249,11 @@ final class OverlayPanelController {
             cancelHoverOpen()
         }
 
-        if model.shouldAutoCollapseOnMouseLeave {
+        let shouldTrackNotificationPointer = model.notchStatus == .opened
+            && model.notchOpenReason == .notification
+            && model.showsNotificationCard
+
+        if shouldTrackNotificationPointer || model.shouldAutoCollapseOnMouseLeave {
             if isPointInExpandedArea(screenLocation) {
                 model.notePointerInsideIslandSurface()
             } else {

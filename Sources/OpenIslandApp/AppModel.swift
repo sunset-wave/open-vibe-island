@@ -1557,6 +1557,7 @@ final class AppModel {
 
         return (ingress == .bridge || !isResolvingInitialLiveSessions)
             && (notchStatus == .closed || notchOpenReason == .notification)
+            && !overlay.shouldPreserveCurrentNotificationSurface(against: surface)
             && surface.matchesCurrentState(of: session)
     }
 
