@@ -426,7 +426,7 @@ struct IslandPanelView: View {
         let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
         let animatesPassiveContent = revealsClosedContent
             && !usesOpenedVisualState
-            && model.islandClosedMode == .waiting
+            && model.islandClosedMode != .idle
         V6ClosedPill(
             mode: model.islandClosedMode,
             label: layout == .external ? model.islandClosedLabel() : nil,
