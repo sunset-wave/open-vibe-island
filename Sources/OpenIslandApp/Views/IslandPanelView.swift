@@ -73,8 +73,11 @@ extension AgentSession {
 
 // MARK: - Animations
 
-private let openAnimation = Animation.smooth(duration: 0.44)
-private let closeAnimation = Animation.smooth(duration: 0.32)
+private let openAnimation = Animation.spring(response: 0.46, dampingFraction: 0.72, blendDuration: 0.02)
+private let closeAnimation = Animation.spring(response: 0.34, dampingFraction: 0.78, blendDuration: 0)
+private let contentRevealAnimation = Animation.spring(response: 0.28, dampingFraction: 0.78, blendDuration: 0)
+private let contentHideAnimation = Animation.smooth(duration: 0.10)
+private let contentRevealDelay: TimeInterval = 0.18
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 
 private struct ConditionalDrawingGroup: ViewModifier {
@@ -132,6 +135,8 @@ struct IslandPanelView: View {
     private var lang: LanguageManager { model.lang }
 
     @State private var showingQuitConfirmation = false
+    @State private var revealsOpenedContent = false
+    @State private var contentRevealGeneration: UInt64 = 0
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -207,6 +212,12 @@ struct IslandPanelView: View {
         } message: {
             Text(model.lang.t("island.quit.confirmMessage"))
         }
+        .onAppear {
+            syncOpenedContentReveal(with: model.notchStatus, immediate: true)
+        }
+        .onChange(of: model.notchStatus) { _, status in
+            syncOpenedContentReveal(with: status)
+        }
     }
 
     @ViewBuilder
@@ -238,9 +249,12 @@ struct IslandPanelView: View {
                     }
 
                 openedSurfaceContent(width: openedWidth, height: openedHeight)
-                    .opacity(usesOpenedVisualState ? 1 : 0)
-                    .allowsHitTesting(usesOpenedVisualState)
-                    .accessibilityHidden(!usesOpenedVisualState)
+                    .opacity(revealsOpenedContent ? 1 : 0)
+                    .scaleEffect(revealsOpenedContent ? 1 : 0.96, anchor: .top)
+                    .offset(y: revealsOpenedContent ? 0 : -5)
+                    .allowsHitTesting(usesOpenedVisualState && revealsOpenedContent)
+                    .accessibilityHidden(!usesOpenedVisualState || !revealsOpenedContent)
+                    .animation(contentRevealAnimation, value: revealsOpenedContent)
 
                 v6ClosedSurface()
                     .opacity(usesOpenedVisualState ? 0 : 1)
@@ -257,6 +271,35 @@ struct IslandPanelView: View {
         .onTapGesture {
             if model.notchStatus != .opened {
                 model.notchOpen(reason: .click)
+            }
+        }
+    }
+
+    private func syncOpenedContentReveal(with status: NotchStatus, immediate: Bool = false) {
+        contentRevealGeneration &+= 1
+        let generation = contentRevealGeneration
+
+        guard status == .opened else {
+            withAnimation(immediate ? nil : contentHideAnimation) {
+                revealsOpenedContent = false
+            }
+            return
+        }
+
+        if immediate {
+            revealsOpenedContent = true
+            return
+        }
+
+        revealsOpenedContent = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + contentRevealDelay) {
+            guard contentRevealGeneration == generation,
+                  model.notchStatus == .opened else {
+                return
+            }
+
+            withAnimation(contentRevealAnimation) {
+                revealsOpenedContent = true
             }
         }
     }
