@@ -757,27 +757,45 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
         layer?.backgroundColor = NSColor.clear.cgColor
     }
 
+    private let configuredInternalScrollViews = NSHashTable<NSScrollView>.weakObjects()
+    private var lastInternalScrollerDiscoveryTime: TimeInterval = 0
+    private let internalScrollerDiscoveryInterval: TimeInterval = 0.5
+
     override func layout() {
         super.layout()
-        // NSHostingView wraps content in internal NSScrollViews.
-        // SwiftUI may recreate them when the view tree changes (e.g.
-        // AutoHeightScrollView toggling between scroll/non-scroll mode),
-        // so we must re-disable on every layout pass.
-        // Guard: only modify properties when they differ to avoid
-        // triggering additional layout passes that could loop.
-        disableInternalScrollers(in: self)
+        configureKnownInternalScrollers()
+
+        let now = ProcessInfo.processInfo.systemUptime
+        guard configuredInternalScrollViews.allObjects.isEmpty
+            || now - lastInternalScrollerDiscoveryTime >= internalScrollerDiscoveryInterval else {
+            return
+        }
+
+        lastInternalScrollerDiscoveryTime = now
+        discoverAndConfigureInternalScrollers(in: self)
     }
 
-    private func disableInternalScrollers(in view: NSView) {
+    private func discoverAndConfigureInternalScrollers(in view: NSView) {
         if let scrollView = view as? NSScrollView {
-            if scrollView.hasVerticalScroller { scrollView.hasVerticalScroller = false }
-            if scrollView.hasHorizontalScroller { scrollView.hasHorizontalScroller = false }
-            if scrollView.scrollerStyle != .overlay { scrollView.scrollerStyle = .overlay }
+            configuredInternalScrollViews.add(scrollView)
+            configureInternalScroller(scrollView)
             return
         }
         for child in view.subviews {
-            disableInternalScrollers(in: child)
+            discoverAndConfigureInternalScrollers(in: child)
         }
+    }
+
+    private func configureKnownInternalScrollers() {
+        for scrollView in configuredInternalScrollViews.allObjects {
+            configureInternalScroller(scrollView)
+        }
+    }
+
+    private func configureInternalScroller(_ scrollView: NSScrollView) {
+        if scrollView.hasVerticalScroller { scrollView.hasVerticalScroller = false }
+        if scrollView.hasHorizontalScroller { scrollView.hasHorizontalScroller = false }
+        if scrollView.scrollerStyle != .overlay { scrollView.scrollerStyle = .overlay }
     }
 }
 

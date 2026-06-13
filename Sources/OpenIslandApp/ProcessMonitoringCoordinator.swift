@@ -71,8 +71,9 @@ final class ProcessMonitoringCoordinator {
                 let probe = self.terminalSessionAttachmentProbe
                 let resolver = self.terminalJumpTargetResolver
                 let liveSessions = self.state.sessions.filter(\.isTrackedLiveSession)
+                let lsofCacheMode = self.lsofCacheMode(for: liveSessions)
                 let (snapshots, ghosttyAvail, terminalAvail, jumpTargets) = await Task.detached(priority: .utility) {
-                    let s = discovery.discover()
+                    let s = discovery.discover(lsofCacheMode: lsofCacheMode)
                     let g = probe.ghosttySnapshotAvailability()
                     let t = probe.terminalSnapshotAvailability()
                     let j = resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)
@@ -87,6 +88,25 @@ final class ProcessMonitoringCoordinator {
                 try? await Task.sleep(for: self.attachmentMonitorInterval(for: self.state.sessions))
             }
         }
+    }
+
+    func invalidateProcessDiscoveryCache() {
+        activeAgentProcessDiscovery.clearLsofCache()
+    }
+
+    private func lsofCacheMode(for sessions: [AgentSession]) -> ActiveAgentProcessDiscovery.LsofCacheMode {
+        if isResolvingInitialLiveSessions {
+            return .active
+        }
+
+        guard !sessions.isEmpty else {
+            return .active
+        }
+
+        let hasActiveWork = sessions.contains {
+            $0.phase == .running || $0.phase.requiresAttention
+        }
+        return hasActiveWork ? .active : .idle
     }
 
     private func attachmentMonitorInterval(for sessions: [AgentSession]) -> Duration {
@@ -115,7 +135,9 @@ final class ProcessMonitoringCoordinator {
         terminalAvailability: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot>? = nil,
         preResolvedJumpTargets: [String: JumpTarget]? = nil
     ) {
-        let activeProcesses = activeProcesses ?? activeAgentProcessDiscovery.discover()
+        let activeProcesses = activeProcesses ?? activeAgentProcessDiscovery.discover(
+            lsofCacheMode: lsofCacheMode(for: state.sessions.filter(\.isTrackedLiveSession))
+        )
 
         // Work on a local copy to avoid triggering didSet (and its queue.sync +
         // view invalidation) on every intermediate mutation.

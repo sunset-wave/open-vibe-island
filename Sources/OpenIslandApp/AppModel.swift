@@ -1547,6 +1547,7 @@ final class AppModel {
             return
         }
 
+        monitoring.invalidateProcessDiscoveryCache()
         state.apply(event)
         reconcileIslandSurfaceAfterStateChange()
         if ingress == .bridge {

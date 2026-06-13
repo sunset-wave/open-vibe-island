@@ -9,6 +9,80 @@ struct ActiveAgentProcessDiscovery {
         var data = Data()
     }
 
+    private final class LsofOutputCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var entries: [LsofCacheKey: LsofCacheEntry] = [:]
+
+        func output(
+            for key: LsofCacheKey,
+            ttl: TimeInterval,
+            now: Date = .now,
+            load: () -> String?
+        ) -> String? {
+            lock.lock()
+            if let entry = entries[key],
+               now.timeIntervalSince(entry.capturedAt) <= ttl {
+                lock.unlock()
+                return entry.output
+            }
+            lock.unlock()
+
+            guard let output = load() else {
+                return nil
+            }
+
+            lock.lock()
+            entries[key] = LsofCacheEntry(output: output, capturedAt: now)
+            lock.unlock()
+            return output
+        }
+
+        func prune(keeping liveKeys: Set<LsofCacheKey>) {
+            lock.lock()
+            entries = entries.filter { liveKeys.contains($0.key) }
+            lock.unlock()
+        }
+
+        func removeAll() {
+            lock.lock()
+            entries.removeAll()
+            lock.unlock()
+        }
+    }
+
+    private struct LsofCacheKey: Hashable, Sendable {
+        var pid: String
+        var parentPID: String
+        var terminalTTY: String?
+        var command: String
+
+        init(process: RunningProcess) {
+            pid = process.pid
+            parentPID = process.parentPID
+            terminalTTY = process.terminalTTY
+            command = process.command
+        }
+    }
+
+    private struct LsofCacheEntry: Sendable {
+        var output: String
+        var capturedAt: Date
+    }
+
+    enum LsofCacheMode: Sendable {
+        case active
+        case idle
+
+        var ttl: TimeInterval {
+            switch self {
+            case .active:
+                1.0
+            case .idle:
+                8.0
+            }
+        }
+    }
+
     struct ProcessSnapshot: Equatable, Sendable {
         var tool: AgentTool
         var sessionID: String?
@@ -50,17 +124,24 @@ struct ActiveAgentProcessDiscovery {
     typealias CommandRunner = @Sendable (_ executablePath: String, _ arguments: [String]) -> String?
 
     private let commandRunner: CommandRunner
+    private let lsofCache = LsofOutputCache()
 
     init(commandRunner: @escaping CommandRunner = Self.commandOutput) {
         self.commandRunner = commandRunner
     }
 
-    func discover() -> [ProcessSnapshot] {
+    func clearLsofCache() {
+        lsofCache.removeAll()
+    }
+
+    func discover(lsofCacheMode: LsofCacheMode = .active) -> [ProcessSnapshot] {
         let processes = runningProcesses()
         guard !processes.isEmpty else {
+            lsofCache.removeAll()
             return []
         }
 
+        lsofCache.prune(keeping: Set(processes.map(LsofCacheKey.init(process:))))
         let processesByPID = Dictionary(uniqueKeysWithValues: processes.map { ($0.pid, $0) })
 
         var snapshots: [ProcessSnapshot] = []
@@ -72,7 +153,11 @@ struct ActiveAgentProcessDiscovery {
             }
 
             if isCodexProcess(command: process.command) {
-                guard let snapshot = codexSnapshot(for: process, processesByPID: processesByPID) else {
+                guard let snapshot = codexSnapshot(
+                    for: process,
+                    processesByPID: processesByPID,
+                    lsofCacheMode: lsofCacheMode
+                ) else {
                     continue
                 }
 
@@ -86,7 +171,11 @@ struct ActiveAgentProcessDiscovery {
             }
 
             if isClaudeProcess(command: process.command) {
-                guard let snapshot = claudeSnapshot(for: process, processesByPID: processesByPID) else {
+                guard let snapshot = claudeSnapshot(
+                    for: process,
+                    processesByPID: processesByPID,
+                    lsofCacheMode: lsofCacheMode
+                ) else {
                     continue
                 }
 
@@ -100,7 +189,7 @@ struct ActiveAgentProcessDiscovery {
             }
 
             if isOpenCodeProcess(command: process.command) {
-                let lsofOutput = lsofOutput(pid: process.pid)
+                let lsofOutput = lsofOutput(for: process, cacheMode: lsofCacheMode)
                 let cwd = lsofOutput.flatMap(workingDirectory(from:))
 
                 // Deduplicate by TTY and working directory instead of PID.
@@ -158,7 +247,7 @@ struct ActiveAgentProcessDiscovery {
                     continue
                 }
 
-                let lsofOutput = lsofOutput(pid: process.pid)
+                let lsofOutput = lsofOutput(for: process, cacheMode: lsofCacheMode)
                 snapshots.append(ProcessSnapshot(
                     tool: .geminiCLI,
                     sessionID: nil,
@@ -175,7 +264,7 @@ struct ActiveAgentProcessDiscovery {
                     continue
                 }
 
-                let lsofOutput = lsofOutput(pid: process.pid)
+                let lsofOutput = lsofOutput(for: process, cacheMode: lsofCacheMode)
                 snapshots.append(ProcessSnapshot(
                     tool: .kimiCLI,
                     sessionID: nil,
@@ -222,9 +311,10 @@ struct ActiveAgentProcessDiscovery {
 
     private func codexSnapshot(
         for process: RunningProcess,
-        processesByPID: [String: RunningProcess]
+        processesByPID: [String: RunningProcess],
+        lsofCacheMode: LsofCacheMode
     ) -> ProcessSnapshot? {
-        guard let lsofOutput = lsofOutput(pid: process.pid),
+        guard let lsofOutput = lsofOutput(for: process, cacheMode: lsofCacheMode),
               let transcriptPath = bestCodexTranscriptPath(in: lsofOutput),
               let sessionID = firstUUID(in: transcriptPath) else {
             return nil
@@ -275,9 +365,10 @@ struct ActiveAgentProcessDiscovery {
 
     private func claudeSnapshot(
         for process: RunningProcess,
-        processesByPID: [String: RunningProcess]
+        processesByPID: [String: RunningProcess],
+        lsofCacheMode: LsofCacheMode
     ) -> ProcessSnapshot? {
-        let lsofOutput = lsofOutput(pid: process.pid)
+        let lsofOutput = lsofOutput(for: process, cacheMode: lsofCacheMode)
         let workingDirectory = lsofOutput.flatMap(workingDirectory(from:))
 
         // Subagent processes run in .claude/worktrees/agent-*/ directories.
@@ -477,8 +568,10 @@ struct ActiveAgentProcessDiscovery {
         return nil
     }
 
-    private func lsofOutput(pid: String) -> String? {
-        commandRunner("/usr/sbin/lsof", ["-a", "-p", pid, "-Fn"])
+    private func lsofOutput(for process: RunningProcess, cacheMode: LsofCacheMode) -> String? {
+        lsofCache.output(for: LsofCacheKey(process: process), ttl: cacheMode.ttl) {
+            commandRunner("/usr/sbin/lsof", ["-a", "-p", process.pid, "-Fn"])
+        }
     }
 
     private func workingDirectory(from lsofOutput: String) -> String? {

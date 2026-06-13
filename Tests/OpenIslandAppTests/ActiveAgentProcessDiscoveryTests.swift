@@ -3,6 +3,10 @@ import Testing
 @testable import OpenIslandApp
 import OpenIslandCore
 
+private final class LsofLookupCounter: @unchecked Sendable {
+    var count = 0
+}
+
 struct ActiveAgentProcessDiscoveryTests {
     @Test
     func discoverOnlyReturnsInteractiveClaudeAndCodexProcesses() {
@@ -135,6 +139,48 @@ struct ActiveAgentProcessDiscoveryTests {
                 terminalApp: "Ghostty"
             ),
         ])
+    }
+
+    @Test
+    func idleLsofCacheReusesStableProcessIdentityUntilCleared() {
+        let counter = LsofLookupCounter()
+        let discovery = ActiveAgentProcessDiscovery { executablePath, arguments in
+            if executablePath == "/bin/ps" {
+                return """
+                  202 401 ttys001 /opt/homebrew/bin/codex
+                  401 900 ttys001 -/opt/homebrew/bin/fish
+                  900 1 ?? /Applications/Ghostty.app/Contents/MacOS/ghostty
+                """
+            }
+
+            guard executablePath == "/usr/sbin/lsof",
+                  let pid = arguments.dropFirst(2).first else {
+                return nil
+            }
+
+            guard pid == "202" else {
+                Issue.record("unexpected lsof lookup for pid \(pid)")
+                return nil
+            }
+
+            counter.count += 1
+            return """
+            fcwd
+            n/tmp/open-island
+            n/Users/test/.codex/sessions/2026/05/10/rollout-2026-05-10T01-20-29-019e0dc1-3f8b-7eb0-ae8d-04a5911e95b9.jsonl
+            """
+        }
+
+        let first = discovery.discover(lsofCacheMode: .idle)
+        let second = discovery.discover(lsofCacheMode: .idle)
+
+        #expect(first == second)
+        #expect(counter.count == 1)
+
+        discovery.clearLsofCache()
+        _ = discovery.discover(lsofCacheMode: .idle)
+
+        #expect(counter.count == 2)
     }
 
     /// VS Code forks (Cursor, Windsurf, Trae, Qoder) bundle Electron's "Code
