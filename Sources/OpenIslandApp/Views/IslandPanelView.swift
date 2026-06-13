@@ -75,7 +75,6 @@ extension AgentSession {
 
 private let openAnimation = Animation.smooth(duration: 0.44)
 private let closeAnimation = Animation.smooth(duration: 0.32)
-private let closedHoverAnimation = Animation.smooth(duration: 0.22)
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 
 private struct ConditionalDrawingGroup: ViewModifier {
@@ -86,6 +85,34 @@ private struct ConditionalDrawingGroup: ViewModifier {
             content.drawingGroup()
         } else {
             content
+        }
+    }
+}
+
+private struct MorphingIslandSurfaceShape: Shape {
+    var topProfile: OpenedIslandSurfaceShape.TopProfile
+    var topCornerRadius: CGFloat
+    var bottomCornerRadius: CGFloat
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(topCornerRadius, bottomCornerRadius) }
+        set {
+            topCornerRadius = newValue.first
+            bottomCornerRadius = newValue.second
+        }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        switch topProfile {
+        case .notch:
+            return NotchShape(
+                topCornerRadius: topCornerRadius,
+                bottomCornerRadius: bottomCornerRadius
+            )
+            .path(in: rect)
+        case .topBar:
+            return V6ClosedPillShape(cornerRadius: bottomCornerRadius)
+                .path(in: rect)
         }
     }
 }
@@ -104,7 +131,6 @@ struct IslandPanelView: View {
     var model: AppModel
     private var lang: LanguageManager { model.lang }
 
-    @State private var isHovering = false
     @State private var showingQuitConfirmation = false
 
     private var isOpened: Bool {
@@ -117,10 +143,6 @@ struct IslandPanelView: View {
 
     private var isPopping: Bool {
         model.notchStatus == .popping
-    }
-
-    private var closedSurfaceScale: CGFloat {
-        model.notchStatus == .closed && isHovering ? IslandChromeMetrics.closedHoverScale : 1
     }
 
     /// Single animation selection based on the current notch status.
@@ -185,11 +207,6 @@ struct IslandPanelView: View {
         } message: {
             Text(model.lang.t("island.quit.confirmMessage"))
         }
-        .onChange(of: model.notchStatus) { _, status in
-            if status != .closed {
-                isHovering = false
-            }
-        }
     }
 
     @ViewBuilder
@@ -204,34 +221,39 @@ struct IslandPanelView: View {
         let outerBottomPadding: CGFloat = 0
         let openedWidth = max(0, layoutWidth - outerHorizontalPadding)
         let openedHeight = max(closedNotchHeight, layoutHeight - outerBottomPadding)
-        let openedScale = openedSurfaceScale(openedWidth: openedWidth, openedHeight: openedHeight)
+        let closedWidth = closedSurfaceWidth
+        let surfaceWidth = usesOpenedVisualState ? openedWidth : closedWidth
+        let surfaceHeight = usesOpenedVisualState ? openedHeight : closedNotchHeight
+        let surfaceShape = morphingSurfaceShape
 
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                openedSurface(width: openedWidth, height: openedHeight)
-                    .scaleEffect(x: openedScale.x, y: openedScale.y, anchor: .top)
+                surfaceShape
+                    .fill(V6Palette.ink)
+                    .frame(width: surfaceWidth, height: surfaceHeight)
+                    .overlay {
+                        surfaceShape
+                            .stroke(Color.white.opacity(usesOpenedVisualState ? 0.07 : 0), lineWidth: 1)
+                            .frame(width: surfaceWidth, height: surfaceHeight)
+                    }
+
+                openedSurfaceContent(width: openedWidth, height: openedHeight)
                     .opacity(usesOpenedVisualState ? 1 : 0)
                     .allowsHitTesting(usesOpenedVisualState)
                     .accessibilityHidden(!usesOpenedVisualState)
 
                 v6ClosedSurface()
-                    .scaleEffect(closedSurfaceScale, anchor: .top)
                     .opacity(usesOpenedVisualState ? 0 : 1)
                     .allowsHitTesting(!usesOpenedVisualState)
             }
-            .frame(maxWidth: .infinity, alignment: .top)
+            .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+            .clipShape(surfaceShape)
         }
+        .frame(maxWidth: .infinity, alignment: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
         .animation(notchTransitionAnimation, value: model.notchStatus)
-        .animation(closedHoverAnimation, value: isHovering)
         .contentShape(Rectangle())
-        .onHover { hovering in
-            guard model.notchStatus == .closed else { return }
-            withAnimation(closedHoverAnimation) {
-                isHovering = hovering
-            }
-        }
         .onTapGesture {
             if model.notchStatus != .opened {
                 model.notchOpen(reason: .click)
@@ -257,21 +279,11 @@ struct IslandPanelView: View {
             layout: layout,
             height: closedNotchHeight,
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
-            minWidth: 70
+            minWidth: 70,
+            showsBackground: false
         )
         .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
         .animation(popAnimation, value: isPopping)
-    }
-
-    private func openedSurfaceScale(openedWidth: CGFloat, openedHeight: CGFloat) -> (x: CGFloat, y: CGFloat) {
-        guard !usesOpenedVisualState else {
-            return (1, 1)
-        }
-
-        return (
-            safeScale(from: closedSurfaceWidth, to: openedWidth),
-            safeScale(from: closedNotchHeight, to: openedHeight)
-        )
     }
 
     private var closedSurfaceWidth: CGFloat {
@@ -287,28 +299,24 @@ struct IslandPanelView: View {
         )
     }
 
-    private func safeScale(from start: CGFloat, to end: CGFloat) -> CGFloat {
-        guard end > 0 else { return 1 }
-        return min(1, max(0.01, start / end))
+    private var morphingSurfaceShape: MorphingIslandSurfaceShape {
+        MorphingIslandSurfaceShape(
+            topProfile: usesNotchAwareOpenedHeader ? .notch : .topBar,
+            topCornerRadius: usesOpenedVisualState && usesNotchAwareOpenedHeader ? NotchShape.openedTopRadius : 0,
+            bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : closedNotchHeight / 2
+        )
     }
 
     // MARK: - Opened surface
 
     @ViewBuilder
-    private func openedSurface(width openedWidth: CGFloat, height openedHeight: CGFloat) -> some View {
+    private func openedSurfaceContent(width openedWidth: CGFloat, height openedHeight: CGFloat) -> some View {
         let horizontalInset = 0.0
         let bottomInset = 0.0
         let surfaceWidth = openedWidth + (horizontalInset * 2)
         let surfaceHeight = openedHeight + bottomInset
-        let surfaceShape = OpenedIslandSurfaceShape(
-            topProfile: usesNotchAwareOpenedHeader ? .notch : .topBar
-        )
 
         ZStack(alignment: .top) {
-            surfaceShape
-                .fill(V6Palette.ink)
-                .frame(width: surfaceWidth, height: surfaceHeight)
-
             VStack(spacing: 0) {
                 openedHeaderContent
                     .frame(height: closedNotchHeight)
@@ -321,11 +329,6 @@ struct IslandPanelView: View {
             .frame(width: openedWidth, height: openedHeight, alignment: .top)
             .padding(.horizontal, horizontalInset)
             .padding(.bottom, bottomInset)
-            .clipShape(surfaceShape)
-            .overlay {
-                surfaceShape
-                    .stroke(Color.white.opacity(0.07), lineWidth: 1)
-            }
         }
         .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
     }

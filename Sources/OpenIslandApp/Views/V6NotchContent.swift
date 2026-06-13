@@ -222,6 +222,8 @@ struct V6ClosedPill: View {
     /// width that fits just the glyph.
     var minWidth: CGFloat = 70
 
+    var showsBackground = true
+
     var body: some View {
         switch layout {
         case .external: externalBody
@@ -276,8 +278,10 @@ struct V6ClosedPill: View {
         )
 
         return ZStack {
-            V6ClosedPillShape()
-                .fill(V6Palette.ink)
+            if showsBackground {
+                V6ClosedPillShape()
+                    .fill(V6Palette.ink)
+            }
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -322,8 +326,10 @@ struct V6ClosedPill: View {
         )
 
         return ZStack {
-            V6ClosedPillShape()
-                .fill(V6Palette.ink)
+            if showsBackground {
+                V6ClosedPillShape()
+                    .fill(V6Palette.ink)
+            }
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
