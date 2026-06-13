@@ -1151,13 +1151,17 @@ struct IslandPanelView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.74))
 
-            Text(provider.peakWindowLabel)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.42))
+            ForEach(provider.windows) { window in
+                HStack(spacing: 3) {
+                    Text(window.label)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.42))
 
-            Text("\(provider.peakUsagePercentage)%")
-                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(usageColor(for: provider.peakUsedPercentage))
+                    Text("\(window.roundedUsedPercentage)%")
+                        .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(usageColor(for: window.usedPercentage))
+                }
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -1229,24 +1233,6 @@ private struct UsageProviderPresentation: Identifiable {
     let id: String
     let title: String
     let windows: [UsageWindowPresentation]
-
-    var peakWindow: UsageWindowPresentation? {
-        windows.max { lhs, rhs in
-            lhs.usedPercentage < rhs.usedPercentage
-        }
-    }
-
-    var peakWindowLabel: String {
-        peakWindow?.label ?? ""
-    }
-
-    var peakUsedPercentage: Double {
-        peakWindow?.usedPercentage ?? 0
-    }
-
-    var peakUsagePercentage: Int {
-        peakWindow?.roundedUsedPercentage ?? 0
-    }
 
     var shortTitle: String {
         switch id {
