@@ -73,11 +73,13 @@ extension AgentSession {
 
 // MARK: - Animations
 
-private let openAnimation = Animation.spring(response: 0.46, dampingFraction: 0.72, blendDuration: 0.02)
-private let closeAnimation = Animation.spring(response: 0.34, dampingFraction: 0.78, blendDuration: 0)
-private let contentRevealAnimation = Animation.spring(response: 0.28, dampingFraction: 0.78, blendDuration: 0)
+private let openAnimation = Animation.spring(response: 0.44, dampingFraction: 0.62, blendDuration: 0.02)
+private let closeAnimation = Animation.spring(response: 0.32, dampingFraction: 0.68, blendDuration: 0)
+private let openedContentRevealAnimation = Animation.spring(response: 0.32, dampingFraction: 0.62, blendDuration: 0)
+private let closedContentRevealAnimation = Animation.spring(response: 0.22, dampingFraction: 0.76, blendDuration: 0)
 private let contentHideAnimation = Animation.smooth(duration: 0.10)
-private let contentRevealDelay: TimeInterval = 0.18
+private let openedContentRevealDelay: TimeInterval = 0.21
+private let closedContentRevealDelay: TimeInterval = 0.14
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 
 private struct ConditionalDrawingGroup: ViewModifier {
@@ -136,6 +138,7 @@ struct IslandPanelView: View {
 
     @State private var showingQuitConfirmation = false
     @State private var revealsOpenedContent = false
+    @State private var revealsClosedContent = true
     @State private var contentRevealGeneration: UInt64 = 0
 
     private var isOpened: Bool {
@@ -213,10 +216,10 @@ struct IslandPanelView: View {
             Text(model.lang.t("island.quit.confirmMessage"))
         }
         .onAppear {
-            syncOpenedContentReveal(with: model.notchStatus, immediate: true)
+            syncIslandContentReveal(with: model.notchStatus, immediate: true)
         }
         .onChange(of: model.notchStatus) { _, status in
-            syncOpenedContentReveal(with: status)
+            syncIslandContentReveal(with: status)
         }
     }
 
@@ -250,15 +253,21 @@ struct IslandPanelView: View {
 
                 openedSurfaceContent(width: openedWidth, height: openedHeight)
                     .opacity(revealsOpenedContent ? 1 : 0)
-                    .scaleEffect(revealsOpenedContent ? 1 : 0.96, anchor: .top)
-                    .offset(y: revealsOpenedContent ? 0 : -5)
+                    .scaleEffect(revealsOpenedContent ? 1 : 0.90, anchor: .top)
+                    .offset(y: revealsOpenedContent ? 0 : -10)
+                    .blur(radius: revealsOpenedContent ? 0 : 4)
                     .allowsHitTesting(usesOpenedVisualState && revealsOpenedContent)
                     .accessibilityHidden(!usesOpenedVisualState || !revealsOpenedContent)
-                    .animation(contentRevealAnimation, value: revealsOpenedContent)
+                    .animation(openedContentRevealAnimation, value: revealsOpenedContent)
 
                 v6ClosedSurface()
-                    .opacity(usesOpenedVisualState ? 0 : 1)
-                    .allowsHitTesting(!usesOpenedVisualState)
+                    .opacity(revealsClosedContent ? 1 : 0)
+                    .scaleEffect(revealsClosedContent ? 1 : 0.90, anchor: .top)
+                    .offset(y: revealsClosedContent ? 0 : -3)
+                    .blur(radius: revealsClosedContent ? 0 : 2)
+                    .allowsHitTesting(!usesOpenedVisualState && revealsClosedContent)
+                    .accessibilityHidden(usesOpenedVisualState || !revealsClosedContent)
+                    .animation(closedContentRevealAnimation, value: revealsClosedContent)
             }
             .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
             .clipShape(surfaceShape)
@@ -275,7 +284,7 @@ struct IslandPanelView: View {
         }
     }
 
-    private func syncOpenedContentReveal(with status: NotchStatus, immediate: Bool = false) {
+    private func syncIslandContentReveal(with status: NotchStatus, immediate: Bool = false) {
         contentRevealGeneration &+= 1
         let generation = contentRevealGeneration
 
@@ -283,22 +292,47 @@ struct IslandPanelView: View {
             withAnimation(immediate ? nil : contentHideAnimation) {
                 revealsOpenedContent = false
             }
+
+            if immediate || status == .popping {
+                revealsClosedContent = true
+                return
+            }
+
+            withAnimation(contentHideAnimation) {
+                revealsClosedContent = false
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + closedContentRevealDelay) {
+                guard contentRevealGeneration == generation,
+                      model.notchStatus != .opened else {
+                    return
+                }
+
+                withAnimation(closedContentRevealAnimation) {
+                    revealsClosedContent = true
+                }
+            }
             return
         }
 
         if immediate {
             revealsOpenedContent = true
+            revealsClosedContent = false
             return
         }
 
-        revealsOpenedContent = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + contentRevealDelay) {
+        withAnimation(contentHideAnimation) {
+            revealsClosedContent = false
+            revealsOpenedContent = false
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + openedContentRevealDelay) {
             guard contentRevealGeneration == generation,
                   model.notchStatus == .opened else {
                 return
             }
 
-            withAnimation(contentRevealAnimation) {
+            withAnimation(openedContentRevealAnimation) {
                 revealsOpenedContent = true
             }
         }
