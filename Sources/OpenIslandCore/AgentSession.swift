@@ -528,7 +528,7 @@ public extension AgentSession {
         // Codex.app sessions stay visible while the desktop app is running.
         // Checked before isHookManaged because a Codex.app session may also
         // be hook-managed (when both hook and rediscovery converge on it).
-        if isCodexAppSession { return isProcessAlive }
+        if isCodexAppSession { return !isSessionEnded && isProcessAlive }
         if isHookManaged { return !isSessionEnded }
         if isProcessAlive { return true }
         return false

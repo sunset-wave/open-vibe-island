@@ -73,13 +73,13 @@ extension AgentSession {
 
 // MARK: - Animations
 
-private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.76, blendDuration: 0.02)
-private let closeAnimation = Animation.spring(response: 0.30, dampingFraction: 0.82, blendDuration: 0)
-private let openedContentRevealAnimation = Animation.spring(response: 0.30, dampingFraction: 0.78, blendDuration: 0)
-private let closedContentRevealAnimation = Animation.spring(response: 0.20, dampingFraction: 0.84, blendDuration: 0)
-private let contentHideAnimation = Animation.smooth(duration: 0.10)
-private let openedContentRevealDelay: TimeInterval = 0.21
-private let closedContentRevealDelay: TimeInterval = 0.14
+private let openAnimation = Animation.spring(response: 0.22, dampingFraction: 0.82, blendDuration: 0)
+private let closeAnimation = Animation.spring(response: 0.18, dampingFraction: 0.86, blendDuration: 0)
+private let openedContentRevealAnimation = Animation.spring(response: 0.16, dampingFraction: 0.86, blendDuration: 0)
+private let closedContentRevealAnimation = Animation.spring(response: 0.14, dampingFraction: 0.90, blendDuration: 0)
+private let contentHideAnimation = Animation.smooth(duration: 0.06)
+private let openedContentRevealDelay: TimeInterval = 0.06
+private let closedContentRevealDelay: TimeInterval = 0.04
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
 
 private struct ConditionalDrawingGroup: ViewModifier {
@@ -255,18 +255,18 @@ struct IslandPanelView: View {
 
                 openedSurfaceContent(width: openedWidth, height: openedHeight)
                     .opacity(revealsOpenedContent ? 1 : 0)
-                    .scaleEffect(revealsOpenedContent ? 1 : 0.90, anchor: .top)
-                    .offset(y: revealsOpenedContent ? 0 : -10)
-                    .blur(radius: revealsOpenedContent ? 0 : 4)
+                    .scaleEffect(revealsOpenedContent ? 1 : 0.95, anchor: .top)
+                    .offset(y: revealsOpenedContent ? 0 : -4)
+                    .blur(radius: revealsOpenedContent ? 0 : 1.5)
                     .allowsHitTesting(usesOpenedVisualState && revealsOpenedContent)
                     .accessibilityHidden(!usesOpenedVisualState || !revealsOpenedContent)
                     .animation(openedContentRevealAnimation, value: revealsOpenedContent)
 
                 v6ClosedSurface()
                     .opacity(revealsClosedContent ? 1 : 0)
-                    .scaleEffect(revealsClosedContent ? 1 : 0.90, anchor: .top)
-                    .offset(y: revealsClosedContent ? 0 : -3)
-                    .blur(radius: revealsClosedContent ? 0 : 2)
+                    .scaleEffect(revealsClosedContent ? 1 : 0.96, anchor: .top)
+                    .offset(y: revealsClosedContent ? 0 : -2)
+                    .blur(radius: revealsClosedContent ? 0 : 1)
                     .allowsHitTesting(!usesOpenedVisualState && revealsClosedContent)
                     .accessibilityHidden(usesOpenedVisualState || !revealsClosedContent)
                     .animation(closedContentRevealAnimation, value: revealsClosedContent)
@@ -680,7 +680,12 @@ struct IslandPanelView: View {
                     onAnswer: { model.answerQuestion(for: session.id, answer: $0) },
                     onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                         ? { model.replyToSession(session, text: $0) } : nil,
-                    onJump: { model.jumpToSession(session) }
+                    onJump: { model.jumpToSession(session) },
+                    onDelete: session.phase == .completed ? {
+                        withAnimation(.smooth(duration: 0.12)) {
+                            model.deleteSession(session.id)
+                        }
+                    } : nil
                 )
                 .id(notificationCardIdentity(for: session))
 
@@ -722,7 +727,13 @@ struct IslandPanelView: View {
                                 onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                                     ? { model.replyToSession(session, text: $0) } : nil,
                                 onJump: { model.jumpToSession(session) },
-                                onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                                onDismiss: session.isRemote && session.phase != .completed
+                                    ? { model.dismissSession(session.id) } : nil,
+                                onDelete: session.phase == .completed ? {
+                                    withAnimation(.smooth(duration: 0.12)) {
+                                        model.deleteSession(session.id)
+                                    }
+                                } : nil
                             )
                         }
                     }
@@ -772,7 +783,13 @@ struct IslandPanelView: View {
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
                         onJump: { model.jumpToSession(session) },
-                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                        onDismiss: session.isRemote && session.phase != .completed
+                            ? { model.dismissSession(session.id) } : nil,
+                        onDelete: session.phase == .completed ? {
+                            withAnimation(.smooth(duration: 0.12)) {
+                                model.deleteSession(session.id)
+                            }
+                        } : nil
                     )
                 }
             }
@@ -1292,6 +1309,7 @@ private struct IslandSessionRow: View {
     var onReply: ((String) -> Void)?
     let onJump: () -> Void
     var onDismiss: (() -> Void)?
+    var onDelete: (() -> Void)?
 
     @State private var isHighlighted = false
     @State private var detailOverride: Bool?
@@ -1396,8 +1414,18 @@ private struct IslandSessionRow: View {
                     .foregroundStyle(summaryAgeColor(for: presence))
                     .frame(minWidth: 30, alignment: .trailing)
                 detailToggleButton(isOpen: showsDetail)
+                if let onDelete {
+                    DismissButton(
+                        systemName: "trash.fill",
+                        accessibilityLabel: "Delete session",
+                        action: onDelete
+                    )
+                }
                 if let onDismiss {
-                    DismissButton(action: onDismiss)
+                    DismissButton(
+                        accessibilityLabel: "Dismiss session",
+                        action: onDismiss
+                    )
                 }
             }
         }
@@ -2804,16 +2832,24 @@ extension MarkdownUI.Theme {
 }
 
 private struct DismissButton: View {
+    var systemName = "xmark.circle.fill"
+    var accessibilityLabel: String
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 12))
+            Image(systemName: systemName)
+                .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(.white.opacity(isHovered ? 0.8 : 0.4))
+                .frame(width: 28, height: 28)
+                .background(
+                    Circle()
+                        .fill(.white.opacity(isHovered ? 0.07 : 0.02))
+                )
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .accessibilityLabel(accessibilityLabel)
     }
 }

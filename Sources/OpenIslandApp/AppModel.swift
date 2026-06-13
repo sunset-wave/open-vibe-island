@@ -665,6 +665,9 @@ final class AppModel {
         codexAppServer.isSessionTracked = { [weak self] id in
             self?.state.session(id: id) != nil
         }
+        codexAppServer.trackedSession = { [weak self] id in
+            self?.state.session(id: id)
+        }
 
         monitoring.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
         monitoring.stateAccessor = { [weak self] in self?.state ?? SessionState() }
@@ -1397,6 +1400,19 @@ final class AppModel {
         state.dismissSession(id: sessionID)
         dismissNotificationSurfaceIfPresent(for: sessionID)
         synchronizeSelection()
+    }
+
+    func deleteSession(_ sessionID: String) {
+        guard state.removeSession(id: sessionID) else { return }
+        dismissNotificationSurfaceIfPresent(for: sessionID)
+        reconcileIslandSurfaceAfterStateChange()
+        synchronizeSelection()
+        refreshOverlayPlacementIfVisible()
+        discovery.refreshCodexRolloutTracking()
+        discovery.scheduleCodexSessionPersistence()
+        discovery.scheduleClaudeSessionPersistence()
+        discovery.scheduleOpenCodeSessionPersistence()
+        discovery.scheduleCursorSessionPersistence()
     }
 
     func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {

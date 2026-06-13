@@ -11,11 +11,16 @@ import OpenIslandCore
 @Observable
 @MainActor
 final class CodexAppServerCoordinator {
+    private static let loadedThreadRefreshInterval: Duration = .seconds(2)
+
     @ObservationIgnored
     private var client: CodexAppServerClient?
 
     @ObservationIgnored
     private var connectTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var loadedThreadRefreshTask: Task<Void, Never>?
 
     /// Callback to emit AgentEvents into AppModel.
     @ObservationIgnored
@@ -30,6 +35,12 @@ final class CodexAppServerCoordinator {
     /// session and wipes richer state from hooks/rediscovery).
     @ObservationIgnored
     var isSessionTracked: ((String) -> Bool)?
+
+    /// Returns the current tracked session snapshot, when available.
+    /// Used to refresh stale Codex.app thread status without re-emitting
+    /// unchanged events on every polling tick.
+    @ObservationIgnored
+    var trackedSession: ((String) -> AgentSession?)?
 
     private(set) var isConnected = false
 
@@ -74,6 +85,7 @@ final class CodexAppServerCoordinator {
 
                 // Fetch currently loaded threads and create sessions.
                 await self.syncLoadedThreads()
+                self.startLoadedThreadRefreshLoop()
             } catch {
                 self.connectTask = nil
                 self.onStatusMessage?("Failed to connect to Codex app-server: \(error.localizedDescription)")
@@ -85,6 +97,8 @@ final class CodexAppServerCoordinator {
     func disconnect() {
         connectTask?.cancel()
         connectTask = nil
+        loadedThreadRefreshTask?.cancel()
+        loadedThreadRefreshTask = nil
         client?.stop()
         client = nil
         isConnected = false
@@ -98,11 +112,18 @@ final class CodexAppServerCoordinator {
             let threads = try await client.listLoadedThreads()
             var created = 0
             for thread in threads where !thread.ephemeral {
-                // Skip threads already tracked — re-emitting sessionStarted
-                // rebuilds the AgentSession and would wipe richer state
-                // already accumulated from hooks or rediscovery.
-                if isSessionTracked?(thread.id) == true { continue }
+                if let existing = trackedSession?(thread.id) {
+                    refreshTrackedThreadStatus(thread, existing: existing)
+                    continue
+                }
+
+                // Skip unknown idle threads so manually removed/completed rows
+                // do not immediately reappear from periodic app-server polling.
+                guard thread.status.type == .active else { continue }
+
+                guard isSessionTracked?(thread.id) != true else { continue }
                 emitSessionStarted(from: thread)
+                refreshNewThreadStatusIfNeeded(thread)
                 created += 1
             }
             if created > 0 {
@@ -110,6 +131,17 @@ final class CodexAppServerCoordinator {
             }
         } catch {
             onStatusMessage?("Failed to list loaded Codex threads: \(error.localizedDescription)")
+        }
+    }
+
+    private func startLoadedThreadRefreshLoop() {
+        guard loadedThreadRefreshTask == nil else { return }
+        loadedThreadRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.loadedThreadRefreshInterval)
+                guard !Task.isCancelled else { return }
+                await self?.syncLoadedThreads()
+            }
         }
     }
 
@@ -123,55 +155,12 @@ final class CodexAppServerCoordinator {
             emitSessionStarted(from: thread)
 
         case .threadStatusChanged(let threadId, let status):
-            switch status.type {
-            case .active:
-                if status.isWaitingOnApproval {
-                    onEvent?(.permissionRequested(
-                        PermissionRequested(
-                            sessionID: threadId,
-                            request: PermissionRequest(
-                                title: "Approval Required",
-                                summary: "Codex is waiting for approval.",
-                                affectedPath: ""
-                            ),
-                            timestamp: .now
-                        )
-                    ))
-                } else if status.isWaitingOnUserInput {
-                    onEvent?(.questionAsked(
-                        QuestionAsked(
-                            sessionID: threadId,
-                            prompt: QuestionPrompt(
-                                title: "Codex is waiting for input.",
-                                options: []
-                            ),
-                            timestamp: .now
-                        )
-                    ))
-                } else {
-                    onEvent?(.activityUpdated(
-                        SessionActivityUpdated(
-                            sessionID: threadId,
-                            summary: "Codex is working…",
-                            phase: .running,
-                            timestamp: .now
-                        )
-                    ))
-                }
-            case .idle:
-                // Idle means "between turns" in the same thread — the thread
-                // is still open.  Only `thread/closed` truly ends a session.
-                onEvent?(.activityUpdated(
-                    SessionActivityUpdated(
-                        sessionID: threadId,
-                        summary: "Idle.",
-                        phase: .completed,
-                        timestamp: .now
-                    )
-                ))
-            case .notLoaded, .systemError:
-                break
-            }
+            emitStatusEvent(
+                threadId: threadId,
+                status: status,
+                existing: trackedSession?(threadId),
+                force: true
+            )
 
         case .threadClosed(let threadId):
             onEvent?(.sessionCompleted(
@@ -206,17 +195,26 @@ final class CodexAppServerCoordinator {
             // session stays visible as "Completed" rather than being torn
             // down.  `thread/closed` is the authoritative end signal.
             let summary: String
+            let phase: SessionPhase
             switch turn.status {
-            case .completed: summary = "Turn completed."
-            case .interrupted: summary = "Turn interrupted."
-            case .failed: summary = "Turn failed."
-            case .inProgress: summary = "Turn in progress."
+            case .completed:
+                summary = "Turn completed."
+                phase = .completed
+            case .interrupted:
+                summary = "Turn interrupted."
+                phase = .completed
+            case .failed:
+                summary = "Turn failed."
+                phase = .completed
+            case .inProgress:
+                summary = "Turn in progress."
+                phase = .running
             }
             onEvent?(.activityUpdated(
                 SessionActivityUpdated(
                     sessionID: threadId,
                     summary: summary,
-                    phase: .completed,
+                    phase: phase,
                     timestamp: .now
                 )
             ))
@@ -227,6 +225,132 @@ final class CodexAppServerCoordinator {
     }
 
     // MARK: - Helpers
+
+    private func refreshTrackedThreadStatus(_ thread: CodexThread, existing: AgentSession) {
+        emitStatusEvent(
+            threadId: thread.id,
+            status: thread.status,
+            existing: existing,
+            force: false
+        )
+    }
+
+    private func refreshNewThreadStatusIfNeeded(_ thread: CodexThread) {
+        guard thread.status.isWaitingOnApproval || thread.status.isWaitingOnUserInput else {
+            return
+        }
+
+        emitStatusEvent(
+            threadId: thread.id,
+            status: thread.status,
+            existing: nil,
+            force: true
+        )
+    }
+
+    @discardableResult
+    private func emitStatusEvent(
+        threadId: String,
+        status: CodexThreadStatus,
+        existing: AgentSession?,
+        force: Bool
+    ) -> Bool {
+        switch status.type {
+        case .active:
+            if status.isWaitingOnApproval {
+                guard force || existing?.phase != .waitingForApproval || existing?.permissionRequest == nil else {
+                    return false
+                }
+                onEvent?(.permissionRequested(
+                    PermissionRequested(
+                        sessionID: threadId,
+                        request: PermissionRequest(
+                            title: "Approval Required",
+                            summary: "Codex is waiting for approval.",
+                            affectedPath: ""
+                        ),
+                        timestamp: .now
+                    )
+                ))
+                return true
+            }
+
+            if status.isWaitingOnUserInput {
+                guard force || existing?.phase != .waitingForAnswer || existing?.questionPrompt == nil else {
+                    return false
+                }
+                onEvent?(.questionAsked(
+                    QuestionAsked(
+                        sessionID: threadId,
+                        prompt: QuestionPrompt(
+                            title: "Codex is waiting for input.",
+                            options: []
+                        ),
+                        timestamp: .now
+                    )
+                ))
+                return true
+            }
+
+            return emitActivityUpdateIfNeeded(
+                threadId: threadId,
+                summary: "Codex is working…",
+                phase: .running,
+                existing: existing,
+                force: force
+            )
+
+        case .idle:
+            return emitActivityUpdateIfNeeded(
+                threadId: threadId,
+                summary: "Idle.",
+                phase: .completed,
+                existing: existing,
+                force: force
+            )
+
+        case .notLoaded:
+            return emitActivityUpdateIfNeeded(
+                threadId: threadId,
+                summary: "Codex thread not loaded.",
+                phase: .completed,
+                existing: existing,
+                force: force
+            )
+
+        case .systemError:
+            return emitActivityUpdateIfNeeded(
+                threadId: threadId,
+                summary: "Codex thread unavailable.",
+                phase: .completed,
+                existing: existing,
+                force: force
+            )
+        }
+    }
+
+    @discardableResult
+    private func emitActivityUpdateIfNeeded(
+        threadId: String,
+        summary: String,
+        phase: SessionPhase,
+        existing: AgentSession?,
+        force: Bool
+    ) -> Bool {
+        guard force || existing?.phase != phase else {
+            return false
+        }
+
+        onEvent?(.activityUpdated(
+            SessionActivityUpdated(
+                sessionID: threadId,
+                summary: summary,
+                phase: phase,
+                timestamp: .now
+            )
+        ))
+        return true
+    }
 
     private func emitSessionStarted(from thread: CodexThread) {
         let workspaceName = URL(fileURLWithPath: thread.cwd).lastPathComponent
