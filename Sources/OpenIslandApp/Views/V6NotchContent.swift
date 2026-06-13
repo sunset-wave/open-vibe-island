@@ -238,17 +238,42 @@ struct V6ClosedPill: View {
     // label) and the right-slot content so they never touch at small widths.
     private static let innerGap: CGFloat = 6
 
+    static func width(
+        label: String?,
+        rightSlot: IslandRightSlotContent?,
+        layout: V6ClosedLayout,
+        height: CGFloat,
+        physicalNotchWidth: CGFloat,
+        minWidth: CGFloat
+    ) -> CGFloat {
+        switch layout {
+        case .external:
+            let pad = height / 2
+            let glyphW: CGFloat = 24
+            let labelW = label.map { V6CenterLabelView.intrinsicWidth(of: $0) } ?? 0
+            let rightW = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
+            let labelBlock = label == nil ? 0 : 6 + labelW
+            let rightBlock = rightSlot == nil ? 0 : Self.innerGap + rightW
+            let intrinsic = pad * 2 + glyphW + labelBlock + rightBlock
+            return max(minWidth, intrinsic)
+        case .macbook:
+            let halfReserve: CGFloat = 44
+            return halfReserve + physicalNotchWidth + halfReserve
+        }
+    }
+
     // MARK: External (fluid)
 
     private var externalBody: some View {
         let glyphW: CGFloat = 24
-        let labelW = label.map { V6CenterLabelView.intrinsicWidth(of: $0) } ?? 0
-        let rightW = rightSlot.map { V6RightSlotView.intrinsicWidth(of: $0) } ?? 0
-
-        let labelBlock = (label == nil ? 0 : 6 + labelW)
-        let rightBlock = (rightSlot == nil ? 0 : Self.innerGap + rightW)
-        let intrinsic = pad * 2 + glyphW + labelBlock + rightBlock
-        let width = max(minWidth, intrinsic)
+        let width = Self.width(
+            label: label,
+            rightSlot: rightSlot,
+            layout: layout,
+            height: height,
+            physicalNotchWidth: physicalNotchWidth,
+            minWidth: minWidth
+        )
 
         return ZStack {
             V6ClosedPillShape()
@@ -287,8 +312,14 @@ struct V6ClosedPill: View {
     // MARK: MacBook (outer width locked)
 
     private var macbookBody: some View {
-        let halfReserve: CGFloat = 44
-        let outer = halfReserve + physicalNotchWidth + halfReserve
+        let outer = Self.width(
+            label: label,
+            rightSlot: rightSlot,
+            layout: layout,
+            height: height,
+            physicalNotchWidth: physicalNotchWidth,
+            minWidth: minWidth
+        )
 
         return ZStack {
             V6ClosedPillShape()

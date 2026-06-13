@@ -73,10 +73,10 @@ extension AgentSession {
 
 // MARK: - Animations
 
-private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
-private let closeAnimation = Animation.smooth(duration: 0.3)
+private let openAnimation = Animation.smooth(duration: 0.44)
+private let closeAnimation = Animation.smooth(duration: 0.32)
+private let closedHoverAnimation = Animation.smooth(duration: 0.22)
 private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
-private let openedSurfaceUnmountDelay: TimeInterval = 0.36
 
 private struct ConditionalDrawingGroup: ViewModifier {
     let enabled: Bool
@@ -106,8 +106,6 @@ struct IslandPanelView: View {
 
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
-    @State private var keepsOpenedSurfaceMounted = false
-    @State private var openedSurfaceMountGeneration: UInt64 = 0
 
     private var isOpened: Bool {
         model.notchStatus == .opened
@@ -117,12 +115,12 @@ struct IslandPanelView: View {
         isOpened
     }
 
-    private var shouldRenderOpenedSurface: Bool {
-        usesOpenedVisualState || keepsOpenedSurfaceMounted
-    }
-
     private var isPopping: Bool {
         model.notchStatus == .popping
+    }
+
+    private var closedSurfaceScale: CGFloat {
+        model.notchStatus == .closed && isHovering ? IslandChromeMetrics.closedHoverScale : 1
     }
 
     /// Single animation selection based on the current notch status.
@@ -187,11 +185,10 @@ struct IslandPanelView: View {
         } message: {
             Text(model.lang.t("island.quit.confirmMessage"))
         }
-        .onAppear {
-            syncOpenedSurfaceMount(with: model.notchStatus, immediate: true)
-        }
         .onChange(of: model.notchStatus) { _, status in
-            syncOpenedSurfaceMount(with: status)
+            if status != .closed {
+                isHovering = false
+            }
         }
     }
 
@@ -207,57 +204,37 @@ struct IslandPanelView: View {
         let outerBottomPadding: CGFloat = 0
         let openedWidth = max(0, layoutWidth - outerHorizontalPadding)
         let openedHeight = max(closedNotchHeight, layoutHeight - outerBottomPadding)
+        let openedScale = openedSurfaceScale(openedWidth: openedWidth, openedHeight: openedHeight)
 
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                if shouldRenderOpenedSurface {
-                    openedSurface(width: openedWidth, height: openedHeight)
-                        .opacity(usesOpenedVisualState ? 1 : 0)
-                        .allowsHitTesting(usesOpenedVisualState)
-                }
+                openedSurface(width: openedWidth, height: openedHeight)
+                    .scaleEffect(x: openedScale.x, y: openedScale.y, anchor: .top)
+                    .opacity(usesOpenedVisualState ? 1 : 0)
+                    .allowsHitTesting(usesOpenedVisualState)
+                    .accessibilityHidden(!usesOpenedVisualState)
 
                 v6ClosedSurface()
+                    .scaleEffect(closedSurfaceScale, anchor: .top)
                     .opacity(usesOpenedVisualState ? 0 : 1)
                     .allowsHitTesting(!usesOpenedVisualState)
             }
             .frame(maxWidth: .infinity, alignment: .top)
         }
-        .scaleEffect(usesOpenedVisualState ? 1 : (isHovering ? IslandChromeMetrics.closedHoverScale : 1), anchor: .top)
         .padding(.horizontal, panelShadowHorizontalInset)
         .padding(.bottom, panelShadowBottomInset)
         .animation(notchTransitionAnimation, value: model.notchStatus)
+        .animation(closedHoverAnimation, value: isHovering)
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+            guard model.notchStatus == .closed else { return }
+            withAnimation(closedHoverAnimation) {
                 isHovering = hovering
             }
         }
         .onTapGesture {
             if model.notchStatus != .opened {
                 model.notchOpen(reason: .click)
-            }
-        }
-    }
-
-    private func syncOpenedSurfaceMount(with status: NotchStatus, immediate: Bool = false) {
-        openedSurfaceMountGeneration &+= 1
-        let generation = openedSurfaceMountGeneration
-
-        switch status {
-        case .opened:
-            keepsOpenedSurfaceMounted = true
-        case .closed, .popping:
-            guard !immediate else {
-                keepsOpenedSurfaceMounted = false
-                return
-            }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + openedSurfaceUnmountDelay) {
-                guard openedSurfaceMountGeneration == generation,
-                      model.notchStatus != .opened else {
-                    return
-                }
-                keepsOpenedSurfaceMounted = false
             }
         }
     }
@@ -284,6 +261,35 @@ struct IslandPanelView: View {
         )
         .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
         .animation(popAnimation, value: isPopping)
+    }
+
+    private func openedSurfaceScale(openedWidth: CGFloat, openedHeight: CGFloat) -> (x: CGFloat, y: CGFloat) {
+        guard !usesOpenedVisualState else {
+            return (1, 1)
+        }
+
+        return (
+            safeScale(from: closedSurfaceWidth, to: openedWidth),
+            safeScale(from: closedNotchHeight, to: openedHeight)
+        )
+    }
+
+    private var closedSurfaceWidth: CGFloat {
+        let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
+        let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
+        return V6ClosedPill.width(
+            label: layout == .external ? model.islandClosedLabel() : nil,
+            rightSlot: model.islandClosedRightSlotContent(),
+            layout: layout,
+            height: closedNotchHeight,
+            physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
+            minWidth: 70
+        )
+    }
+
+    private func safeScale(from start: CGFloat, to end: CGFloat) -> CGFloat {
+        guard end > 0 else { return 1 }
+        return min(1, max(0.01, start / end))
     }
 
     // MARK: - Opened surface
