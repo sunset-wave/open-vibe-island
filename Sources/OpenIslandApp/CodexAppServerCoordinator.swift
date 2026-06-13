@@ -11,7 +11,8 @@ import OpenIslandCore
 @Observable
 @MainActor
 final class CodexAppServerCoordinator {
-    private static let loadedThreadRefreshInterval: Duration = .seconds(2)
+    private static let activeLoadedThreadRefreshInterval: Duration = .seconds(2)
+    private static let idleLoadedThreadRefreshInterval: Duration = .seconds(10)
 
     @ObservationIgnored
     private var client: CodexAppServerClient?
@@ -84,8 +85,10 @@ final class CodexAppServerCoordinator {
                 self.onStatusMessage?("Connected to Codex app-server.")
 
                 // Fetch currently loaded threads and create sessions.
-                await self.syncLoadedThreads()
-                self.startLoadedThreadRefreshLoop()
+                let hasActiveThreads = await self.syncLoadedThreads()
+                self.startLoadedThreadRefreshLoop(
+                    initialInterval: Self.loadedThreadRefreshInterval(hasActiveThreads: hasActiveThreads)
+                )
             } catch {
                 self.connectTask = nil
                 self.onStatusMessage?("Failed to connect to Codex app-server: \(error.localizedDescription)")
@@ -106,10 +109,20 @@ final class CodexAppServerCoordinator {
 
     // MARK: - Thread sync
 
-    private func syncLoadedThreads() async {
-        guard let client else { return }
+    private static func loadedThreadRefreshInterval(hasActiveThreads: Bool) -> Duration {
+        hasActiveThreads
+            ? activeLoadedThreadRefreshInterval
+            : idleLoadedThreadRefreshInterval
+    }
+
+    @discardableResult
+    private func syncLoadedThreads() async -> Bool {
+        guard let client else { return false }
         do {
             let threads = try await client.listLoadedThreads()
+            let hasActiveThreads = threads.contains {
+                !$0.ephemeral && $0.status.type == .active
+            }
             var created = 0
             for thread in threads where !thread.ephemeral {
                 if let existing = trackedSession?(thread.id) {
@@ -129,18 +142,22 @@ final class CodexAppServerCoordinator {
             if created > 0 {
                 onStatusMessage?("Synced \(created) new Codex thread(s) from app-server.")
             }
+            return hasActiveThreads
         } catch {
             onStatusMessage?("Failed to list loaded Codex threads: \(error.localizedDescription)")
+            return false
         }
     }
 
-    private func startLoadedThreadRefreshLoop() {
+    private func startLoadedThreadRefreshLoop(initialInterval: Duration) {
         guard loadedThreadRefreshTask == nil else { return }
         loadedThreadRefreshTask = Task { [weak self] in
+            var nextInterval = initialInterval
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.loadedThreadRefreshInterval)
+                try? await Task.sleep(for: nextInterval)
                 guard !Task.isCancelled else { return }
-                await self?.syncLoadedThreads()
+                let hasActiveThreads = await self?.syncLoadedThreads() ?? false
+                nextInterval = Self.loadedThreadRefreshInterval(hasActiveThreads: hasActiveThreads)
             }
         }
     }

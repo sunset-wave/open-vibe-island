@@ -82,6 +82,7 @@ private enum IslandMotionDefaults {
     static let openedContentRevealDelay: TimeInterval = 0.06
     static let closedContentRevealDelay: TimeInterval = 0.04
     static let popResponse = 0.3
+    static let passiveAnimationFrameInterval: TimeInterval = 1.0 / 12.0
 }
 
 private struct ConditionalDrawingGroup: ViewModifier {
@@ -417,13 +418,15 @@ struct IslandPanelView: View {
 
     /// Closed island per v6 spec. Renders the flat-top pill with the
     /// UnifiedBars glyph, respecting the user's right-slot / center-label
-    /// preferences. AppModel is @Observable so any change to sessions /
-    /// preferences re-renders this automatically; UnifiedBars runs its own
-    /// TimelineView internally for bar animation.
+    /// preferences. Passive animation is gated so hidden/idle states do not
+    /// keep SwiftUI rendering continuously.
     @ViewBuilder
     private func v6ClosedSurface() -> some View {
         let layout: V6ClosedLayout = isExternalDisplayPlacement ? .external : .macbook
         let physicalNotchWidth: CGFloat = targetOverlayScreen?.notchSize.width ?? 180
+        let animatesPassiveContent = revealsClosedContent
+            && !usesOpenedVisualState
+            && model.islandClosedMode != .idle
         V6ClosedPill(
             mode: model.islandClosedMode,
             label: layout == .external ? model.islandClosedLabel() : nil,
@@ -432,7 +435,9 @@ struct IslandPanelView: View {
             height: closedNotchHeight,
             physicalNotchWidth: layout == .macbook ? physicalNotchWidth : 0,
             minWidth: 70,
-            showsBackground: false
+            showsBackground: false,
+            animates: animatesPassiveContent,
+            frameInterval: IslandMotionDefaults.passiveAnimationFrameInterval
         )
         .scaleEffect(isPopping ? popScale : 1, anchor: .top)
         .animation(popAnimation, value: isPopping)
@@ -2053,18 +2058,19 @@ private struct IslandSessionRow: View {
         let tint = statusTint(for: presence)
         switch stateIndicator {
         case .animatedDot:
-            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
-                let pulse = presence == .running || isActionable
-                    ? (sin(context.date.timeIntervalSinceReferenceDate * 3.2) + 1) / 2
-                    : 0
-                Circle()
-                    .fill(tint)
-                    .frame(width: 9, height: 9)
-                    .scaleEffect(1 + (pulse * 0.18))
-                    .shadow(color: tint.opacity(presence == .inactive ? 0 : 0.36 + (pulse * 0.26)), radius: 4 + (pulse * 3))
-                    .padding(.top, 6)
+            if presence == .running || isActionable {
+                TimelineView(.periodic(from: .now, by: IslandMotionDefaults.passiveAnimationFrameInterval)) { context in
+                    animatedStatusDot(
+                        tint: tint,
+                        presence: presence,
+                        pulse: (sin(context.date.timeIntervalSinceReferenceDate * 3.2) + 1) / 2
+                    )
+                }
+                .frame(width: 10, height: 24, alignment: .top)
+            } else {
+                animatedStatusDot(tint: tint, presence: presence, pulse: 0)
+                    .frame(width: 10, height: 24, alignment: .top)
             }
-            .frame(width: 10, height: 24, alignment: .top)
         case .bar:
             RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                 .fill(tint)
@@ -2082,6 +2088,22 @@ private struct IslandSessionRow: View {
                 .frame(width: 8, height: 8)
                 .padding(.top, 6)
         }
+    }
+
+    private func animatedStatusDot(
+        tint: Color,
+        presence: IslandSessionPresence,
+        pulse: Double
+    ) -> some View {
+        Circle()
+            .fill(tint)
+            .frame(width: 9, height: 9)
+            .scaleEffect(1 + (pulse * 0.18))
+            .shadow(
+                color: tint.opacity(presence == .inactive ? 0 : 0.36 + (pulse * 0.26)),
+                radius: 4 + (pulse * 3)
+            )
+            .padding(.top, 6)
     }
 
     private func rowFillColor(for presence: IslandSessionPresence) -> Color {

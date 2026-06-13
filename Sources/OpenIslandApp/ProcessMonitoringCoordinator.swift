@@ -45,6 +45,9 @@ final class ProcessMonitoringCoordinator {
     private var wasCodexAppRunning = false
 
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let fastAttachmentMonitorInterval: Duration = .seconds(2)
+    private static let emptyAttachmentMonitorInterval: Duration = .seconds(6)
+    private static let idleAttachmentMonitorInterval: Duration = .seconds(10)
 
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
@@ -81,9 +84,27 @@ final class ProcessMonitoringCoordinator {
                     terminalAvailability: terminalAvail,
                     preResolvedJumpTargets: jumpTargets
                 )
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: self.attachmentMonitorInterval(for: self.state.sessions))
             }
         }
+    }
+
+    private func attachmentMonitorInterval(for sessions: [AgentSession]) -> Duration {
+        if isResolvingInitialLiveSessions {
+            return Self.fastAttachmentMonitorInterval
+        }
+
+        let trackedSessions = sessions.filter(\.isTrackedLiveSession)
+        guard !trackedSessions.isEmpty else {
+            return Self.emptyAttachmentMonitorInterval
+        }
+
+        let hasActiveWork = trackedSessions.contains {
+            $0.phase == .running || $0.phase.requiresAttention
+        }
+        return hasActiveWork
+            ? Self.fastAttachmentMonitorInterval
+            : Self.idleAttachmentMonitorInterval
     }
 
     // MARK: - Reconciliation

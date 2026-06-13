@@ -15,6 +15,8 @@ struct UnifiedBars: View {
 
     var mode: Mode
     var size: CGFloat = 24
+    var animates: Bool = false
+    var frameInterval: TimeInterval = 1.0 / 12.0
     /// Ink color for bars / tick. Defaults to the v6 paper ink.
     var tint: Color = Color(red: 0xf1 / 255.0, green: 0xea / 255.0, blue: 0xd9 / 255.0)
 
@@ -29,14 +31,32 @@ struct UnifiedBars: View {
     ]
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            Canvas { context, canvasSize in
-                withScaledContext(context, canvasSize) { ctx in
-                    drawBars(context: ctx, time: timeline.date.timeIntervalSinceReferenceDate)
+        Group {
+            if shouldAnimate {
+                TimelineView(.periodic(from: .now, by: timelineInterval)) { timeline in
+                    barsCanvas(time: timeline.date.timeIntervalSinceReferenceDate)
                 }
+            } else {
+                barsCanvas(time: 0)
             }
         }
         .frame(width: size, height: size)
+    }
+
+    private var shouldAnimate: Bool {
+        animates && mode != .idle
+    }
+
+    private var timelineInterval: TimeInterval {
+        max(frameInterval, 1.0 / 30.0)
+    }
+
+    private func barsCanvas(time: TimeInterval) -> some View {
+        Canvas { context, canvasSize in
+            withScaledContext(context, canvasSize) { ctx in
+                drawBars(context: ctx, time: time)
+            }
+        }
     }
 
     // MARK: - Drawing

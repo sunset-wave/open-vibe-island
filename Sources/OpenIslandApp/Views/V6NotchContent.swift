@@ -30,6 +30,8 @@ enum IslandRightSlotContent: Equatable {
 
 struct V6RightSlotView: View {
     let content: IslandRightSlotContent
+    var animates: Bool = false
+    var frameInterval: TimeInterval = 1.0 / 12.0
 
     var body: some View {
         switch content {
@@ -40,7 +42,7 @@ struct V6RightSlotView: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(V6Palette.paper.opacity(0.72))
         case .agents(let cells):
-            AgentsGridBody(cells: cells)
+            AgentsGridBody(cells: cells, animates: animates, frameInterval: frameInterval)
         }
     }
 
@@ -114,6 +116,8 @@ struct V6RightSlotView: View {
 /// idle = 22% alpha, waiting = opacity 0.35 ↔ 1 breathing pulse.
 private struct AgentsGridBody: View {
     let cells: [AgentGridCell]
+    let animates: Bool
+    let frameInterval: TimeInterval
 
     var body: some View {
         let rowSizes = V6RightSlotView.balancedRows(cells.count)
@@ -124,7 +128,13 @@ private struct AgentsGridBody: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: geom.gap) {
                     ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                        AgentsGridTileView(cell: cell, size: geom.cell, radius: geom.radius)
+                        AgentsGridTileView(
+                            cell: cell,
+                            size: geom.cell,
+                            radius: geom.radius,
+                            animates: animates,
+                            frameInterval: frameInterval
+                        )
                     }
                 }
             }
@@ -137,6 +147,8 @@ private struct AgentsGridTileView: View {
     let cell: AgentGridCell
     let size: CGFloat
     let radius: CGFloat
+    let animates: Bool
+    let frameInterval: TimeInterval
 
     var body: some View {
         switch cell {
@@ -151,7 +163,13 @@ private struct AgentsGridTileView: View {
                     .fill(color.opacity(0.22))
                     .frame(width: size, height: size)
             case .waiting:
-                AgentsGridWaitingTile(color: color, size: size, radius: radius)
+                AgentsGridWaitingTile(
+                    color: color,
+                    size: size,
+                    radius: radius,
+                    animates: animates,
+                    frameInterval: frameInterval
+                )
             }
         case .overflow(let n):
             ZStack {
@@ -170,18 +188,33 @@ private struct AgentsGridWaitingTile: View {
     let color: Color
     let size: CGFloat
     let radius: CGFloat
-    @State private var pulse = false
+    let animates: Bool
+    let frameInterval: TimeInterval
 
     var body: some View {
+        Group {
+            if animates {
+                TimelineView(.periodic(from: .now, by: max(frameInterval, 1.0 / 30.0))) { timeline in
+                    tile(opacity: opacity(at: timeline.date))
+                }
+            } else {
+                tile(opacity: 0.72)
+            }
+        }
+    }
+
+    private func tile(opacity: Double) -> some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(color)
             .frame(width: size, height: size)
-            .opacity(pulse ? 1.0 : 0.35)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                    pulse = true
-                }
-            }
+            .opacity(opacity)
+    }
+
+    private func opacity(at date: Date) -> Double {
+        let period = 1.4
+        let progress = date.timeIntervalSinceReferenceDate
+            .truncatingRemainder(dividingBy: period) / period
+        return 0.35 + (0.65 * (0.5 - 0.5 * cos(progress * 2 * .pi)))
     }
 }
 
@@ -223,6 +256,8 @@ struct V6ClosedPill: View {
     var minWidth: CGFloat = 70
 
     var showsBackground = true
+    var animates = false
+    var frameInterval: TimeInterval = 1.0 / 12.0
 
     var body: some View {
         switch layout {
@@ -284,7 +319,12 @@ struct V6ClosedPill: View {
             }
 
             HStack(spacing: 0) {
-                UnifiedBars(mode: mode, size: 24)
+                UnifiedBars(
+                    mode: mode,
+                    size: 24,
+                    animates: animates,
+                    frameInterval: frameInterval
+                )
                     .frame(width: glyphW, height: 24)
 
                 if let label {
@@ -296,7 +336,11 @@ struct V6ClosedPill: View {
                 Spacer(minLength: Self.innerGap)
 
                 if let rightSlot {
-                    V6RightSlotView(content: rightSlot)
+                    V6RightSlotView(
+                        content: rightSlot,
+                        animates: animates,
+                        frameInterval: frameInterval
+                    )
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
@@ -332,13 +376,22 @@ struct V6ClosedPill: View {
             }
 
             HStack(spacing: 0) {
-                UnifiedBars(mode: mode, size: 24)
+                UnifiedBars(
+                    mode: mode,
+                    size: 24,
+                    animates: animates,
+                    frameInterval: frameInterval
+                )
                     .frame(width: 24, height: 24)
 
                 Spacer(minLength: 0)
 
                 if let rightSlot {
-                    V6RightSlotView(content: rightSlot)
+                    V6RightSlotView(
+                        content: rightSlot,
+                        animates: animates,
+                        frameInterval: frameInterval
+                    )
                 }
             }
             .padding(.horizontal, pad)
