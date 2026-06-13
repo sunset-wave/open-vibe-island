@@ -73,10 +73,10 @@ extension AgentSession {
 
 // MARK: - Animations
 
-private let openAnimation = Animation.spring(response: 0.44, dampingFraction: 0.62, blendDuration: 0.02)
-private let closeAnimation = Animation.spring(response: 0.32, dampingFraction: 0.68, blendDuration: 0)
-private let openedContentRevealAnimation = Animation.spring(response: 0.32, dampingFraction: 0.62, blendDuration: 0)
-private let closedContentRevealAnimation = Animation.spring(response: 0.22, dampingFraction: 0.76, blendDuration: 0)
+private let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.76, blendDuration: 0.02)
+private let closeAnimation = Animation.spring(response: 0.30, dampingFraction: 0.82, blendDuration: 0)
+private let openedContentRevealAnimation = Animation.spring(response: 0.30, dampingFraction: 0.78, blendDuration: 0)
+private let closedContentRevealAnimation = Animation.spring(response: 0.20, dampingFraction: 0.84, blendDuration: 0)
 private let contentHideAnimation = Animation.smooth(duration: 0.10)
 private let openedContentRevealDelay: TimeInterval = 0.21
 private let closedContentRevealDelay: TimeInterval = 0.14
@@ -125,6 +125,8 @@ private struct MorphingIslandSurfaceShape: Shape {
 // MARK: - Main island view
 
 struct IslandPanelView: View {
+    private static let closedSurfaceCornerRadius: CGFloat = 10
+    private static let openedSurfaceCornerRadius: CGFloat = 14
     private static let headerControlButtonSize: CGFloat = 22
     private static let headerControlSpacing: CGFloat = 8
     private static let headerHorizontalPadding: CGFloat = 18
@@ -377,10 +379,11 @@ struct IslandPanelView: View {
     }
 
     private var morphingSurfaceShape: MorphingIslandSurfaceShape {
-        MorphingIslandSurfaceShape(
+        let openedTopRadius = usesNotchAwareOpenedHeader ? Self.openedSurfaceCornerRadius : 0
+        return MorphingIslandSurfaceShape(
             topProfile: usesNotchAwareOpenedHeader ? .notch : .topBar,
-            topCornerRadius: usesOpenedVisualState && usesNotchAwareOpenedHeader ? NotchShape.openedTopRadius : 0,
-            bottomCornerRadius: usesOpenedVisualState ? NotchShape.openedBottomRadius : closedNotchHeight / 2
+            topCornerRadius: usesOpenedVisualState ? openedTopRadius : 0,
+            bottomCornerRadius: usesOpenedVisualState ? Self.openedSurfaceCornerRadius : Self.closedSurfaceCornerRadius
         )
     }
 
