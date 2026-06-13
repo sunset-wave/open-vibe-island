@@ -7,23 +7,8 @@ import OpenIslandCore
 @Suite(.serialized)
 struct AppModelSessionListTests {
     init() {
+        resetAppModelAppearanceDefaultsForTests()
         [
-            "appearance.island.v8.stateIndicator",
-            "appearance.island.v8.sessionGroup",
-            "appearance.island.v8.sessionSort",
-            "appearance.island.v8.completedStaleThreshold",
-            "appearance.island.v8.notch.rightSlot",
-            "appearance.island.v8.notch.centerLabel",
-            "appearance.island.v8.notch.stateIndicator",
-            "appearance.island.v8.notch.sessionGroup",
-            "appearance.island.v8.notch.sessionSort",
-            "appearance.island.v8.notch.completedStaleThreshold",
-            "appearance.island.v8.topBar.rightSlot",
-            "appearance.island.v8.topBar.centerLabel",
-            "appearance.island.v8.topBar.stateIndicator",
-            "appearance.island.v8.topBar.sessionGroup",
-            "appearance.island.v8.topBar.sessionSort",
-            "appearance.island.v8.topBar.completedStaleThreshold",
             "app.suppressFrontmostNotifications",
             "feature.completionReply.enabled",
             "overlay.sound.muted",
@@ -263,8 +248,10 @@ struct AppModelSessionListTests {
     func islandSessionSectionsGroupStaleCompletedIntoIdle() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .fiveMinutes
+        updateAllIslandAppearanceProfiles(model) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .fiveMinutes
+        }
 
         var approval = listSession(id: "approval", phase: .waitingForApproval, updatedAt: now)
         approval.permissionRequest = PermissionRequest(
@@ -289,8 +276,10 @@ struct AppModelSessionListTests {
     func islandSessionSectionsKeepCompletedInDoneWhenStaleThresholdIsNever() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionGroup = .state
-        model.completedStaleThreshold = .never
+        updateAllIslandAppearanceProfiles(model) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .never
+        }
 
         var oldDone = listSession(id: "old-done", phase: .completed, updatedAt: now.addingTimeInterval(-86_400))
         oldDone.isProcessAlive = true
@@ -304,7 +293,9 @@ struct AppModelSessionListTests {
     func islandSessionListCanSortByLastUpdate() {
         let now = Date()
         let model = AppModel()
-        model.islandSessionSort = .lastUpdate
+        updateAllIslandAppearanceProfiles(model) {
+            $0.sessionSort = .lastUpdate
+        }
 
         var olderRunning = listSession(id: "older-running", phase: .running, updatedAt: now.addingTimeInterval(-120))
         var newerCompleted = listSession(id: "newer-completed", phase: .completed, updatedAt: now.addingTimeInterval(-10))
@@ -314,6 +305,30 @@ struct AppModelSessionListTests {
         model.state = SessionState(sessions: [olderRunning, newerCompleted])
 
         #expect(model.islandListSessions.map(\.id) == ["newer-completed", "older-running"])
+    }
+
+    @Test
+    func islandSessionListPreferencesFollowActiveDisplayProfile() {
+        let now = Date()
+        let model = AppModel()
+        model.updateAppearancePreferences(for: .notch) {
+            $0.sessionGroup = .state
+            $0.completedStaleThreshold = .never
+        }
+        model.updateAppearancePreferences(for: .topBar) {
+            $0.sessionGroup = .none
+            $0.completedStaleThreshold = .fiveMinutes
+        }
+
+        var oldDone = listSession(id: "old-done", phase: .completed, updatedAt: now.addingTimeInterval(-86_400))
+        oldDone.isProcessAlive = true
+        model.state = SessionState(sessions: [oldDone])
+
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .topBar)
+        #expect(model.islandSessionSections.map(\.id) == ["all"])
+
+        model.overlayPlacementDiagnostics = placementDiagnostics(mode: .notch)
+        #expect(model.islandSessionSections.map(\.id) == ["state-done"])
     }
 
     @Test
