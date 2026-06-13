@@ -54,6 +54,11 @@ enum IslandAppearanceDisplayProfile: String, CaseIterable, Identifiable, Sendabl
 }
 
 struct IslandAppearancePreferences: Equatable, Sendable {
+    static let defaultAnimationSpeed = 1.0
+    static let defaultWindowElasticity = 0.45
+    static let animationSpeedRange = 0.5...2.0
+    static let windowElasticityRange = 0.0...1.0
+
     var rightSlot: IslandRightSlot = .count
     var centerLabel: IslandCenterLabel = .agentAction
     var usageDisplay: IslandUsageDisplay = .compact
@@ -61,6 +66,16 @@ struct IslandAppearancePreferences: Equatable, Sendable {
     var sessionGroup: IslandSessionGroup = .none
     var sessionSort: IslandSessionSort = .attention
     var completedStaleThreshold: IslandCompletedStaleThreshold = .fiveMinutes
+    var animationSpeed: Double = defaultAnimationSpeed
+    var windowElasticity: Double = defaultWindowElasticity
+
+    static func clampedAnimationSpeed(_ value: Double) -> Double {
+        min(max(value, animationSpeedRange.lowerBound), animationSpeedRange.upperBound)
+    }
+
+    static func clampedWindowElasticity(_ value: Double) -> Double {
+        min(max(value, windowElasticityRange.lowerBound), windowElasticityRange.upperBound)
+    }
 }
 
 enum IslandUsageDisplay: String, CaseIterable, Identifiable, Sendable {

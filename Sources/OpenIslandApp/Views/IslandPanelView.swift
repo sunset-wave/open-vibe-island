@@ -73,14 +73,16 @@ extension AgentSession {
 
 // MARK: - Animations
 
-private let openAnimation = Animation.spring(response: 0.22, dampingFraction: 0.82, blendDuration: 0)
-private let closeAnimation = Animation.spring(response: 0.18, dampingFraction: 0.86, blendDuration: 0)
-private let openedContentRevealAnimation = Animation.spring(response: 0.16, dampingFraction: 0.86, blendDuration: 0)
-private let closedContentRevealAnimation = Animation.spring(response: 0.14, dampingFraction: 0.90, blendDuration: 0)
-private let contentHideAnimation = Animation.smooth(duration: 0.06)
-private let openedContentRevealDelay: TimeInterval = 0.06
-private let closedContentRevealDelay: TimeInterval = 0.04
-private let popAnimation = Animation.spring(response: 0.3, dampingFraction: 0.5)
+private enum IslandMotionDefaults {
+    static let openResponse = 0.22
+    static let closeResponse = 0.18
+    static let openedContentRevealResponse = 0.16
+    static let closedContentRevealResponse = 0.14
+    static let contentHideDuration = 0.06
+    static let openedContentRevealDelay: TimeInterval = 0.06
+    static let closedContentRevealDelay: TimeInterval = 0.04
+    static let popResponse = 0.3
+}
 
 private struct ConditionalDrawingGroup: ViewModifier {
     let enabled: Bool
@@ -153,6 +155,77 @@ struct IslandPanelView: View {
 
     private var isPopping: Bool {
         model.notchStatus == .popping
+    }
+
+    private var motionSpeed: Double {
+        IslandAppearancePreferences.clampedAnimationSpeed(model.islandAnimationSpeed)
+    }
+
+    private var motionElasticity: Double {
+        IslandAppearancePreferences.clampedWindowElasticity(model.islandWindowElasticity)
+    }
+
+    private func scaledMotionTime(_ baseValue: Double) -> Double {
+        baseValue / motionSpeed
+    }
+
+    private func dampingFraction(tight: Double, springy: Double) -> Double {
+        tight - ((tight - springy) * motionElasticity)
+    }
+
+    private var openAnimation: Animation {
+        Animation.spring(
+            response: scaledMotionTime(IslandMotionDefaults.openResponse),
+            dampingFraction: dampingFraction(tight: 0.94, springy: 0.68),
+            blendDuration: 0
+        )
+    }
+
+    private var closeAnimation: Animation {
+        Animation.spring(
+            response: scaledMotionTime(IslandMotionDefaults.closeResponse),
+            dampingFraction: dampingFraction(tight: 0.94, springy: 0.76),
+            blendDuration: 0
+        )
+    }
+
+    private var openedContentRevealAnimation: Animation {
+        Animation.spring(
+            response: scaledMotionTime(IslandMotionDefaults.openedContentRevealResponse),
+            dampingFraction: dampingFraction(tight: 0.94, springy: 0.76),
+            blendDuration: 0
+        )
+    }
+
+    private var closedContentRevealAnimation: Animation {
+        Animation.spring(
+            response: scaledMotionTime(IslandMotionDefaults.closedContentRevealResponse),
+            dampingFraction: dampingFraction(tight: 0.96, springy: 0.82),
+            blendDuration: 0
+        )
+    }
+
+    private var contentHideAnimation: Animation {
+        Animation.smooth(duration: scaledMotionTime(IslandMotionDefaults.contentHideDuration))
+    }
+
+    private var openedContentRevealDelay: TimeInterval {
+        scaledMotionTime(IslandMotionDefaults.openedContentRevealDelay)
+    }
+
+    private var closedContentRevealDelay: TimeInterval {
+        scaledMotionTime(IslandMotionDefaults.closedContentRevealDelay)
+    }
+
+    private var popAnimation: Animation {
+        Animation.spring(
+            response: scaledMotionTime(IslandMotionDefaults.popResponse),
+            dampingFraction: dampingFraction(tight: 0.72, springy: 0.46)
+        )
+    }
+
+    private var popScale: CGFloat {
+        1 + CGFloat(0.018 + (motionElasticity * 0.026))
     }
 
     /// Single animation selection based on the current notch status.
@@ -361,7 +434,7 @@ struct IslandPanelView: View {
             minWidth: 70,
             showsBackground: false
         )
-        .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
+        .scaleEffect(isPopping ? popScale : 1, anchor: .top)
         .animation(popAnimation, value: isPopping)
     }
 

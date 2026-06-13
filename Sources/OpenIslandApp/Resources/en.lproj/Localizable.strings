@@ -73,6 +73,14 @@
 "settings.appearance.profile.external.note" = "Top-bar fallback without the MacBook notch corners.";
 "settings.appearance.profile.macbook.title" = "MacBook notch";
 "settings.appearance.profile.macbook.note" = "Built-in notch surface with notch-aware geometry.";
+"settings.appearance.motion.title" = "Window motion";
+"settings.appearance.motion.note" = "Tune hover expansion speed and spring feel for the selected display profile.";
+"settings.appearance.motion.speed" = "Animation speed";
+"settings.appearance.motion.speed.slow" = "Slower";
+"settings.appearance.motion.speed.fast" = "Faster";
+"settings.appearance.motion.elasticity" = "Window elasticity";
+"settings.appearance.motion.elasticity.tight" = "Tighter";
+"settings.appearance.motion.elasticity.springy" = "Springier";
 "settings.appearance.usageDisplay.title" = "02 · Usage";
 "settings.appearance.usageDisplay.note" = "Controls whether the opened island shows compact agent usage.";
 "settings.appearance.usageDisplay.hidden" = "Hidden";

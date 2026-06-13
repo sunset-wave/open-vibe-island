@@ -63,6 +63,9 @@ struct AppearanceSettingsPane: View {
                     note: lang.t("settings.appearance.profile.macbook.note")
                 )
             }
+
+            motionTuningSection
+                .padding(.top, 4)
         }
     }
 
@@ -116,6 +119,121 @@ struct AppearanceSettingsPane: View {
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private var motionTuningSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(
+                title: lang.t("settings.appearance.motion.title"),
+                note: lang.t("settings.appearance.motion.note")
+            )
+
+            VStack(spacing: 14) {
+                motionSlider(
+                    title: lang.t("settings.appearance.motion.speed"),
+                    systemImage: "speedometer",
+                    value: editingPreferences.animationSpeed,
+                    valueText: motionSpeedText(editingPreferences.animationSpeed),
+                    range: IslandAppearancePreferences.animationSpeedRange,
+                    step: 0.05,
+                    minimumLabel: lang.t("settings.appearance.motion.speed.slow"),
+                    maximumLabel: lang.t("settings.appearance.motion.speed.fast")
+                ) { newValue in
+                    model.updateAppearancePreferences(for: editingProfile) {
+                        $0.animationSpeed = IslandAppearancePreferences.clampedAnimationSpeed(newValue)
+                    }
+                }
+
+                Rectangle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(height: 1)
+
+                motionSlider(
+                    title: lang.t("settings.appearance.motion.elasticity"),
+                    systemImage: "waveform.path",
+                    value: editingPreferences.windowElasticity,
+                    valueText: motionElasticityText(editingPreferences.windowElasticity),
+                    range: IslandAppearancePreferences.windowElasticityRange,
+                    step: 0.05,
+                    minimumLabel: lang.t("settings.appearance.motion.elasticity.tight"),
+                    maximumLabel: lang.t("settings.appearance.motion.elasticity.springy")
+                ) { newValue in
+                    model.updateAppearancePreferences(for: editingProfile) {
+                        $0.windowElasticity = IslandAppearancePreferences.clampedWindowElasticity(newValue)
+                    }
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.025))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+        }
+    }
+
+    private func motionSlider(
+        title: String,
+        systemImage: String,
+        value: Double,
+        valueText: String,
+        range: ClosedRange<Double>,
+        step: Double,
+        minimumLabel: String,
+        maximumLabel: String,
+        update: @escaping (Double) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(V6Palette.paper.opacity(0.76))
+                    .frame(width: 22, height: 22)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                    )
+
+                Text(title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(V6Palette.paper.opacity(0.9))
+
+                Spacer(minLength: 10)
+
+                Text(valueText)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(V6Palette.ink)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(V6Palette.paper.opacity(0.9))
+                    )
+            }
+
+            Slider(
+                value: Binding(
+                    get: { value },
+                    set: { update($0) }
+                ),
+                in: range,
+                step: step
+            )
+            .tint(V6Palette.paper.opacity(0.9))
+            .accessibilityLabel(title)
+            .accessibilityValue(valueText)
+
+            HStack {
+                Text(minimumLabel)
+                Spacer()
+                Text(maximumLabel)
+            }
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(V6Palette.paper.opacity(0.38))
+        }
     }
 
     // MARK: - Notch part
@@ -552,6 +670,14 @@ struct AppearanceSettingsPane: View {
                     .foregroundStyle(Color.white.opacity(0.38))
             }
         }
+    }
+
+    private func motionSpeedText(_ value: Double) -> String {
+        "\(Int((IslandAppearancePreferences.clampedAnimationSpeed(value) * 100).rounded()))%"
+    }
+
+    private func motionElasticityText(_ value: Double) -> String {
+        "\(Int((IslandAppearancePreferences.clampedWindowElasticity(value) * 100).rounded()))"
     }
 
     private func monoChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {

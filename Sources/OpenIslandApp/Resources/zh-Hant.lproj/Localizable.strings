@@ -73,6 +73,14 @@
 "settings.appearance.profile.external.note" = "沒有 MacBook 凹槽外圓角的頂部列布局。";
 "settings.appearance.profile.macbook.title" = "MacBook 凹槽螢幕";
 "settings.appearance.profile.macbook.note" = "內建凹槽螢幕布局，保留凹槽感知幾何。";
+"settings.appearance.motion.title" = "視窗動效";
+"settings.appearance.motion.note" = "調整目前顯示器配置下的懸停展開速度和彈性感。";
+"settings.appearance.motion.speed" = "動畫速度";
+"settings.appearance.motion.speed.slow" = "更慢";
+"settings.appearance.motion.speed.fast" = "更快";
+"settings.appearance.motion.elasticity" = "視窗彈性";
+"settings.appearance.motion.elasticity.tight" = "更穩";
+"settings.appearance.motion.elasticity.springy" = "更彈";
 "settings.appearance.usageDisplay.title" = "02 · 用量";
 "settings.appearance.usageDisplay.note" = "控制展開後的 Island 是否顯示緊湊的代理用量。";
 "settings.appearance.usageDisplay.hidden" = "隱藏";

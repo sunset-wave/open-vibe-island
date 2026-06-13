@@ -377,6 +377,14 @@ final class AppModel {
         set { updateAppearancePreferences(for: activeAppearanceProfile) { $0.completedStaleThreshold = newValue } }
     }
 
+    var islandAnimationSpeed: Double {
+        appearancePreferences(for: activeAppearanceProfile).animationSpeed
+    }
+
+    var islandWindowElasticity: Double {
+        appearancePreferences(for: activeAppearanceProfile).windowElasticity
+    }
+
     @ObservationIgnored
     var openSettingsWindow: (() -> Void)?
 
@@ -426,6 +434,14 @@ final class AppModel {
         defaults.set(preferences.sessionGroup.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionGroup"))
         defaults.set(preferences.sessionSort.rawValue, forKey: Self.appearanceDefaultsKey(profile, "sessionSort"))
         defaults.set(preferences.completedStaleThreshold.rawValue, forKey: Self.appearanceDefaultsKey(profile, "completedStaleThreshold"))
+        defaults.set(
+            IslandAppearancePreferences.clampedAnimationSpeed(preferences.animationSpeed),
+            forKey: Self.appearanceDefaultsKey(profile, "animationSpeed")
+        )
+        defaults.set(
+            IslandAppearancePreferences.clampedWindowElasticity(preferences.windowElasticity),
+            forKey: Self.appearanceDefaultsKey(profile, "windowElasticity")
+        )
     }
 
     // MARK: - Watch Notification
@@ -536,6 +552,26 @@ final class AppModel {
         "appearance.island.v8.\(profile.rawValue).\(name)"
     }
 
+    private static func loadAppearanceDouble(
+        for profile: IslandAppearanceDisplayProfile,
+        name: String,
+        defaultValue: Double,
+        range: ClosedRange<Double>
+    ) -> Double {
+        let storedValue = UserDefaults.standard.object(forKey: appearanceDefaultsKey(profile, name))
+        let value: Double
+
+        if let number = storedValue as? NSNumber {
+            value = number.doubleValue
+        } else if let string = storedValue as? String, let double = Double(string) {
+            value = double
+        } else {
+            value = defaultValue
+        }
+
+        return min(max(value, range.lowerBound), range.upperBound)
+    }
+
     private static func loadAppearancePreferences(for profile: IslandAppearanceDisplayProfile) -> IslandAppearancePreferences {
         let defaults = UserDefaults.standard
         return IslandAppearancePreferences(
@@ -572,7 +608,19 @@ final class AppModel {
                 rawValue: defaults.string(forKey: appearanceDefaultsKey(profile, "completedStaleThreshold"))
                     ?? defaults.string(forKey: legacyCompletedStaleThresholdDefaultsKey)
                     ?? ""
-            ) ?? .fiveMinutes
+            ) ?? .fiveMinutes,
+            animationSpeed: loadAppearanceDouble(
+                for: profile,
+                name: "animationSpeed",
+                defaultValue: IslandAppearancePreferences.defaultAnimationSpeed,
+                range: IslandAppearancePreferences.animationSpeedRange
+            ),
+            windowElasticity: loadAppearanceDouble(
+                for: profile,
+                name: "windowElasticity",
+                defaultValue: IslandAppearancePreferences.defaultWindowElasticity,
+                range: IslandAppearancePreferences.windowElasticityRange
+            )
         )
     }
 
